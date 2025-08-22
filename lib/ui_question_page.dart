@@ -1,6 +1,16 @@
 import 'package:flutter/material.dart';
-class QuizQuestionPage extends StatelessWidget {
+
+// 1. Converted to a StatefulWidget
+class QuizQuestionPage extends StatefulWidget {
   const QuizQuestionPage({super.key});
+
+  @override
+  State<QuizQuestionPage> createState() => _QuizQuestionPageState();
+}
+
+class _QuizQuestionPageState extends State<QuizQuestionPage> {
+  // 2. Added a state variable to track the selected option
+  String? _selectedOption;
 
   @override
   Widget build(BuildContext context) {
@@ -28,13 +38,14 @@ class QuizQuestionPage extends StatelessWidget {
                           const SizedBox(height: 32), // Top padding
                           _buildQuestionTextField(),
                           const SizedBox(height: 50),
-                          _buildOptionTextField(label: 'A.', borderColor: Colors.blue.shade700),
+                          // 3. Using the new stateful option widget
+                          _buildOption(label: 'A.', borderColor: Colors.blue.shade700),
                           const SizedBox(height: 16),
-                          _buildOptionTextField(label: 'B.', borderColor: Colors.yellow.shade700),
+                          _buildOption(label: 'B.', borderColor: Colors.yellow.shade700),
                           const SizedBox(height: 16),
-                          _buildOptionTextField(label: 'C.', borderColor: Colors.green.shade600),
+                          _buildOption(label: 'C.', borderColor: Colors.green.shade600),
                           const SizedBox(height: 16),
-                          _buildOptionTextField(label: 'D.', borderColor: Colors.red.shade600),
+                          _buildOption(label: 'D.', borderColor: Colors.red.shade600),
                         ],
                       ),
                     ),
@@ -80,7 +91,7 @@ class QuizQuestionPage extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3), // Corrected deprecated method
+            color: Colors.black.withOpacity(0.1), // Corrected deprecated method
             blurRadius: 10,
             offset: const Offset(0, 5),
           ),
@@ -99,33 +110,51 @@ class QuizQuestionPage extends StatelessWidget {
     );
   }
 
-  /// Builds a reusable text field for the options.
-  Widget _buildOptionTextField({required String label, required Color borderColor}) {
-    return TextField(
-      decoration: InputDecoration(
-        contentPadding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20), // Increased vertical padding
-        prefixIcon: Padding(
-          padding: const EdgeInsets.only(left: 20, right: 12),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey[600],
-            ),
+  /// 4. NEW WIDGET: Builds a tappable option that changes color.
+  Widget _buildOption({required String label, required Color borderColor}) {
+    final bool isSelected = _selectedOption == label;
+
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          if (isSelected) {
+            _selectedOption = null; // Deselect if tapped again
+          } else {
+            _selectedOption = label; // Select this option
+          }
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.green.shade100 : Colors.white,
+          border: Border.all(
+            color: isSelected ? const Color.fromARGB(255, 58, 168, 63) : borderColor,
+            width: 2.0,
           ),
-        ),
-        prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
-        hintText: 'Enter option',
-        filled: true,
-        fillColor: Colors.white,
-        enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(15),
-          borderSide: BorderSide(color: borderColor, width: 2.0),
         ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(15), // Made border radius consistent
-          borderSide: BorderSide(color: borderColor, width: 2.5),
+        child: Row(
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey[600],
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: TextField(
+                decoration: InputDecoration(
+                  hintText: 'Enter option',
+                  border: InputBorder.none,
+                  isCollapsed: true,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -173,7 +202,7 @@ class QuizQuestionPage extends StatelessWidget {
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.blue.shade600,
         foregroundColor: Colors.white,
-        minimumSize: const Size(double.infinity, 50), // Full width
+        minimumSize: const Size(double.infinity, 54), // Full width
         padding: const EdgeInsets.symmetric(vertical: 16),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
         elevation: 2,

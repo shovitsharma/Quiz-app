@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 
 import 'package:quiz_app/circles.dart';
-import 'package:quiz_app/logo.dart'; 
+import 'package:quiz_app/login.dart';
+import 'package:quiz_app/logo.dart';
+import 'package:quiz_app/signup.dart'; 
 class QuizSecondPage extends StatelessWidget {
   const QuizSecondPage({super.key});
 
@@ -27,12 +29,20 @@ class QuizSecondPage extends StatelessWidget {
                   const SizedBox(height: 80),
                   _buildPrimaryButton(
                     text: 'Sign Up',
-                    onPressed: () {},
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (context) => const SignUpPage()),
+                      );
+                    },
                   ),
                   const SizedBox(height: 20),
                   _buildSecondaryButton(
                     text: 'Log In',
-                    onPressed: () {},
+                    onPressed: () {
+                      Navigator.of(context).push(
+                      MaterialPageRoute(builder: (context) => const LoginPage()),
+                      );
+                    },
                   ),
                 ],
               ),
