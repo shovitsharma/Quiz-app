@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 
 
 import 'package:quiz_app/circles.dart';
-import 'package:quiz_app/logo.dart'; // Keep this for the rotation angle
-
+import 'package:quiz_app/logo.dart'; 
 class QuizSecondPage extends StatelessWidget {
   const QuizSecondPage({super.key});
 
