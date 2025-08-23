@@ -53,7 +53,7 @@ class WelcomePage extends StatelessWidget {
           const SizedBox(height: 50),
           _buildCreateQuizButton(context),
         ],
-      ),
+      )
     );
   }
 
