@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-
-
 import 'package:quiz_app/circles.dart';
+import 'package:quiz_app/client/pages/enter_code.dart';
 import 'package:quiz_app/logo.dart';
 import 'package:quiz_app/second_page.dart'; 
 
@@ -29,7 +28,9 @@ class QuizFirstPage extends StatelessWidget {
                   const SizedBox(height: 80),
                   _buildPrimaryButton(
                     text: 'Enter the Quiz',
-                    onPressed: () {},
+                    onPressed: () {
+                      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (context)=> EnterQuizCodeScreen()));
+                    },
                   ),
                   const SizedBox(height: 20),
                   _buildSecondaryButton(
