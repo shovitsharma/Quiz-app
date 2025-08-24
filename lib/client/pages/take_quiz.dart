@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:quiz_app/login.dart';
 
 class QuizQuestion {
   String question;
   List<String> options;
-  int correctIndex;
+  int correctIndex; // not shown to contestant
 
   QuizQuestion({
     required this.question,
@@ -30,89 +29,171 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
   Widget build(BuildContext context) {
     final question = widget.questions[_currentQuestion];
 
-    return QuizPageTemplate(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Scaffold(
+      backgroundColor: Colors.grey[100],
+      body: Stack(
         children: [
-          Text(
-            question.question,
-            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 30),
-
-          // Manual Radio Group
-          Column(
-            children: List.generate(question.options.length, (index) {
-              return Row(
+          _buildBackground(),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Radio<int>(
-                    value: index,
-                    groupValue: _selectedAnswers[_currentQuestion],
-                    onChanged: (int? val) {
-                      if (val != null) {
-                        setState(() {
-                          _selectedAnswers[_currentQuestion] = val;
-                        });
-                      }
-                    },
-                  ),
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _selectedAnswers[_currentQuestion] = index;
-                        });
-                      },
-                      child: Text(
-                        question.options[index],
-                        style: const TextStyle(fontSize: 16),
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            }),
+                  const SizedBox(height: 32),
+                  _buildQuestionCard(question.question),
+                  const SizedBox(height: 30),
+                  // Options
+                  Column(
+  children: List.generate(question.options.length, (index) {
+    final isSelected = _selectedAnswers[_currentQuestion] == index;
+    final label = String.fromCharCode(65 +index); // A., B., C., D.
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0), // spacing between options
+      child: Container(
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.lightBlue.shade100 : Colors.white,
+          border: Border.all(
+            color: isSelected ? Colors.blue : Colors.grey.shade400,
+            width: 2,
           ),
-
-          const Spacer(),
-
-          // Navigation Buttons
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              ElevatedButton(
-                onPressed: _currentQuestion == 0
-                    ? null
-                    : () {
-                        setState(() {
-                          _currentQuestion--;
-                        });
-                      },
-                child: const Text('Previous'),
+          borderRadius: BorderRadius.circular(15),
+          boxShadow: [
+            BoxShadow(
+              color: const Color.fromARGB(65, 0, 0, 0),
+              blurRadius: 5,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(left: 20, right: 12),
+              child: Text(
+                '$label.',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey[600],
+                ),
               ),
-              ElevatedButton(
-                onPressed: () {
-                  if (_currentQuestion < widget.questions.length - 1) {
-                    setState(() {
-                      _currentQuestion++;
-                    });
-                  } else {
-                    _submitQuiz();
-                  }
+            ),
+            Expanded(
+              child: GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _selectedAnswers[_currentQuestion] = index;
+                  });
                 },
-                child: Text(
-                    _currentQuestion == widget.questions.length - 1
-                        ? 'Submit'
-                        : 'Next'),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Text(
+                    question.options[index],
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                ),
               ),
-            ],
-          )
+            ),
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  _selectedAnswers[_currentQuestion] = index;
+                });
+              },
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Icon(
+                  isSelected ? Icons.check_circle : Icons.radio_button_unchecked,
+                  color: isSelected ? Colors.blue : Colors.grey.shade400,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }),
+),
+                  const Spacer(),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      ElevatedButton(
+                        onPressed: _currentQuestion == 0
+                            ? null
+                            : () {
+                                setState(() {
+                                  _currentQuestion--;
+                                });
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.yellow.shade700,
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor: Colors.grey.shade400,
+                          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                        ),
+                        child: const Text('Previous', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                      ElevatedButton(
+                        onPressed: () {
+                          if (_currentQuestion < widget.questions.length - 1) {
+                            setState(() {
+                              _currentQuestion++;
+                            });
+                          } else {
+                            _showScore();
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue.shade600,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                        ),
+                        child: Text(
+                          _currentQuestion == widget.questions.length - 1 ? 'Submit' : 'Next',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  void _submitQuiz() {
+  Widget _buildQuestionCard(String questionText) {
+    return Container(
+      height: 200,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 5))],
+      ),
+      child: Text(
+        questionText,
+        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+
+  Widget _buildBackground() {
+    return ClipPath(
+      clipper: _BackgroundClipper(),
+      child: Container(height: 250, color: Colors.red.shade400),
+    );
+  }
+
+  void _showScore() {
     int score = 0;
     widget.questions.asMap().forEach((i, q) {
       if (_selectedAnswers[i] == q.correctIndex) score++;
@@ -132,4 +213,19 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
       ),
     );
   }
+}
+
+class _BackgroundClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    final path = Path();
+    path.lineTo(0, size.height * 0.8);
+    path.quadraticBezierTo(size.width / 2, size.height, size.width, size.height * 0.8);
+    path.lineTo(size.width, 0);
+    path.close();
+    return path;
+  }
+
+  @override
+  bool shouldReclip(CustomClipper<Path> oldClipper) => false;
 }
