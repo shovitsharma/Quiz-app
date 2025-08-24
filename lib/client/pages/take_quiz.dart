@@ -47,7 +47,7 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
                   Column(
   children: List.generate(question.options.length, (index) {
     final isSelected = _selectedAnswers[_currentQuestion] == index;
-    final label = String.fromCharCode(65 + index); // A., B., C., D.
+    final label = String.fromCharCode(65 +index); // A., B., C., D.
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0), // spacing between options
