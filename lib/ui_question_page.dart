@@ -195,6 +195,14 @@ class _QuizQuestionPageState extends State<QuizQuestionPage> {
       initialDate: DateTime.now(),
       firstDate: DateTime.now().subtract(const Duration(days: 365)),
       lastDate: DateTime.now().add(const Duration(days: 365)),
+      builder: (BuildContext context, Widget? child) {
+      return Theme(
+        data: Theme.of(context).copyWith(
+          dialogTheme: DialogThemeData(backgroundColor: const Color.fromARGB(255, 255, 255, 255)),
+        ),
+        child: child!,
+      );
+    },
     );
     if (pickedDate == null || !mounted) return;
 
