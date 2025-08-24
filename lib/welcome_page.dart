@@ -19,7 +19,7 @@ class WelcomePage extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start, // Align text to the left
         children: [
           Text(
-            'Welcome ${name}!',
+            'Welcome $name!',
             style: const TextStyle(
               fontSize: 36,
               fontWeight: FontWeight.w900,

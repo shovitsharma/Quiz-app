@@ -244,8 +244,13 @@ class _QuizQuestionPageState extends State<QuizQuestionPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Validation Error'),
-        content: Text(message),
+        title: Center(child: const Text('Validation error',style: TextStyle(fontSize: 25, fontWeight: FontWeight.w400 ),)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(message,style: TextStyle(fontSize: 15),textAlign: TextAlign.center,),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
