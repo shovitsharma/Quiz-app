@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:quiz_app/auth/socket_service.dart';
 import 'package:quiz_app/client/pages/loading_quiz.dart';
 import 'package:quiz_app/login.dart';
 
@@ -83,42 +84,78 @@ class EnterQuizCodeScreen extends StatelessWidget {
               const SizedBox(height: 10),
 
               ElevatedButton(
-                onPressed: () {
-                  final random = Random();
-                  final randomPic = _profilePictures[random.nextInt(_profilePictures.length)];
+  onPressed: () async {
+    final playerName = _nameController.text.trim();
+    final quizCode = _codeController.text.trim();
 
-                  final playerName = _nameController.text.trim();
-                  final quizCode = _codeController.text.trim();
+    if (playerName.isEmpty || quizCode.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please enter both name and quiz code")),
+      );
+      return;
+    }
 
-                  if (playerName.isEmpty || quizCode.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Please enter both name and quiz code")),
-                    );
-                    return;
-                  }
+    // Pick random profile picture
+    final random = Random();
+    final randomPic = _profilePictures[random.nextInt(_profilePictures.length)];
 
-                  Navigator.push(context, MaterialPageRoute(
-                  builder: (_) => WaitingRoomScreen(
-                        playerName: playerName,
-                        profilePic: randomPic,
-                        quizCode: quizCode,
-                        ),
-                  ),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.black,
-                  foregroundColor: Colors.white,
-                  maximumSize: const Size(200, 70),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                  elevation: 4,
-                  shadowColor: Colors.black.withOpacity(0.3),
-                ),
-                child: const Text(
-                  'ENTER',
-                  style: TextStyle(fontSize: 17),
+    // Show loading while connecting
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final socketService = LiveSocketService();
+      socketService.connect("http://34.235.122.140:4000");
+
+      // Attempt to join as player
+      socketService.joinAsPlayer(
+        code: quizCode,
+        name: playerName,
+        callback: (response) {
+          Navigator.of(context).pop(); // remove loading
+
+          if (response["success"] == true) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => WaitingRoomScreen(
+                  playerName: playerName,
+                  profilePic: randomPic,
+                  quizCode: quizCode,
                 ),
               ),
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(response["message"] ?? "Failed to join session")),
+            );
+          }
+        },
+      );
+    } catch (e) {
+      Navigator.of(context).pop(); // remove loading
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error connecting: $e")),
+      );
+    }
+  },
+  style: ElevatedButton.styleFrom(
+    backgroundColor: Colors.black,
+    foregroundColor: Colors.white,
+    maximumSize: const Size(200, 70),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+    elevation: 4,
+    shadowColor: Colors.black.withOpacity(0.3),
+  ),
+  child: const Text(
+    'ENTER',
+    style: TextStyle(fontSize: 17),
+  ),
+)
+
             ],
           ),
         ),

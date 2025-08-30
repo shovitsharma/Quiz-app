@@ -100,10 +100,10 @@ class _LoginPageState extends State<LoginPage> {
   Widget _buildLoginButton(BuildContext context) {
   return ElevatedButton(
     onPressed: () async {
-      final email = _emailController.text.trim(); // create TextEditingController
+      final email = _emailController.text.trim();
       final password = _passwordController.text.trim();
 
-      if(email.isEmpty || password.isEmpty){
+      if (email.isEmpty || password.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Enter both email and password")),
         );
@@ -112,13 +112,14 @@ class _LoginPageState extends State<LoginPage> {
 
       final result = await AuthService.login(email, password);
 
-      if(result['success'] == true){
+      // ✅ Check for token instead of 'success'
+      if (result['token'] != null) {
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => const WelcomePage()),
+          MaterialPageRoute(builder: (_) => const WelcomePage()),
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result['message'])),
+          SnackBar(content: Text(result['message'] ?? "Login failed")),
         );
       }
     },

@@ -1,6 +1,5 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:quiz_app/auth/socket_service.dart';
 
 class QuizQuestion {
   String question;
@@ -24,7 +23,7 @@ class QuizQuestion {
 
 class TakeQuizScreen extends StatefulWidget {
   final String quizId;
-  final String nickname; // temporary contestant name
+  final String nickname;
 
   const TakeQuizScreen({
     super.key,
@@ -37,83 +36,78 @@ class TakeQuizScreen extends StatefulWidget {
 }
 
 class _TakeQuizScreenState extends State<TakeQuizScreen> {
-  int _currentQuestion = 0;
   Map<int, int> _selectedAnswers = {};
-  List<QuizQuestion> _questions = [];
+  Map<String, dynamic>? _currentQuestion;
   bool _isLoading = true;
-
-  static const String baseUrl = "http://34.235.122.140:4000/api";
 
   @override
   void initState() {
     super.initState();
-    _fetchQuestions();
+    _connectSocket();
   }
 
-  Future<void> _fetchQuestions() async {
-    try {
-      final url = Uri.parse('$baseUrl/quiz/public/${widget.quizId}');
-      final response = await http.get(url);
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final questions = (data["questions"] as List)
-            .map((q) => QuizQuestion.fromJson(q))
-            .toList();
-
-        setState(() {
-          _questions = questions;
-          _isLoading = false;
-        });
-      } else {
-        throw Exception("Failed to load quiz");
-      }
-    } catch (e) {
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error fetching quiz: $e")),
-      );
-    }
+  @override
+  void dispose() {
+    LiveSocketService().disconnect();
+    super.dispose();
   }
 
-  Future<void> _submitResults(int score) async {
-    try {
-      final url = Uri.parse('$baseUrl/quiz/${widget.quizId}/submit');
-      final body = {
-        "nickname": widget.nickname,
-        "score": score,
-        "answers": _selectedAnswers,
-      };
+  void _connectSocket() {
+    final socket = LiveSocketService();
+    socket.connect("http://34.235.122.140:4000");
 
-      final response = await http.post(
-        url,
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode(body),
-      );
+    // Player joins the session
+    socket.joinAsPlayer(
+      code: widget.quizId,
+      name: widget.nickname,
+      callback: (resp) {
+        if (resp["success"] != true) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(resp["message"] ?? "Failed to join")),
+          );
+        }
+      },
+    );
 
-      if (response.statusCode != 200) {
-        throw Exception("Failed to submit results");
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error submitting results: $e")),
-      );
-    }
+    // Receive next question
+    socket.onQuestionShow((questionData) {
+      if (!mounted) return;
+      setState(() {
+        _currentQuestion = questionData;
+        _isLoading = false;
+      });
+    });
+
+    // Session ended, show score
+    socket.onSessionEnded((data) {
+      _showScore();
+    });
+  }
+
+  void _submitAnswer(int index) {
+    if (_currentQuestion == null) return;
+
+    final questionIndex = _currentQuestion!["index"];
+    _selectedAnswers[questionIndex] = index;
+
+    LiveSocketService().submitAnswer(
+      questionIndex: questionIndex,
+      answerIndex: index,
+      callback: (_) {},
+    );
   }
 
   void _showScore() {
     int score = 0;
-    _questions.asMap().forEach((i, q) {
-      if (_selectedAnswers[i] == q.correctIndex) score++;
+    _selectedAnswers.forEach((index, answer) {
+      if (_currentQuestion?["correctIndex"] == answer) score++;
     });
-
-    _submitResults(score);
 
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Quiz Completed'),
-        content: Text('Your score: $score / ${_questions.length}'),
+        content: Text('Your score: $score'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst),
@@ -126,19 +120,16 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
+    if (_isLoading || _currentQuestion == null) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
     }
 
-    if (_questions.isEmpty) {
-      return const Scaffold(
-        body: Center(child: Text("No questions found.")),
-      );
-    }
-
-    final question = _questions[_currentQuestion];
+    final questionText = _currentQuestion!["questionText"];
+    final options = List<String>.from(_currentQuestion!["options"]);
+    final questionIndex = _currentQuestion!["index"];
+    final selectedIndex = _selectedAnswers[questionIndex];
 
     return Scaffold(
       backgroundColor: Colors.grey[100],
@@ -152,13 +143,11 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const SizedBox(height: 32),
-                  _buildQuestionCard(question.question),
+                  _buildQuestionCard(questionText),
                   const SizedBox(height: 30),
-                  // Options
                   Column(
-                    children: List.generate(question.options.length, (index) {
-                      final isSelected =
-                          _selectedAnswers[_currentQuestion] == index;
+                    children: List.generate(options.length, (index) {
+                      final isSelected = selectedIndex == index;
                       final label = String.fromCharCode(65 + index);
 
                       return Padding(
@@ -186,7 +175,8 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
                           child: Row(
                             children: [
                               Padding(
-                                padding: const EdgeInsets.only(left: 20, right: 12),
+                                padding:
+                                    const EdgeInsets.only(left: 20, right: 12),
                                 child: Text(
                                   '$label.',
                                   style: TextStyle(
@@ -198,26 +188,23 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
                               ),
                               Expanded(
                                 child: GestureDetector(
-                                  onTap: () {
-                                    setState(() {
-                                      _selectedAnswers[_currentQuestion] = index;
-                                    });
-                                  },
+                                  onTap: () => setState(() {
+                                    _submitAnswer(index);
+                                  }),
                                   child: Padding(
-                                    padding: const EdgeInsets.symmetric(vertical: 16),
+                                    padding:
+                                        const EdgeInsets.symmetric(vertical: 16),
                                     child: Text(
-                                      question.options[index],
+                                      options[index],
                                       style: const TextStyle(fontSize: 16),
                                     ),
                                   ),
                                 ),
                               ),
                               GestureDetector(
-                                onTap: () {
-                                  setState(() {
-                                    _selectedAnswers[_currentQuestion] = index;
-                                  });
-                                },
+                                onTap: () => setState(() {
+                                  _submitAnswer(index);
+                                }),
                                 child: Padding(
                                   padding: const EdgeInsets.all(16.0),
                                   child: Icon(
@@ -237,58 +224,6 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
                     }),
                   ),
                   const Spacer(),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      ElevatedButton(
-                        onPressed: _currentQuestion == 0
-                            ? null
-                            : () {
-                                setState(() {
-                                  _currentQuestion--;
-                                });
-                              },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.yellow.shade700,
-                          foregroundColor: Colors.white,
-                          disabledBackgroundColor: Colors.grey.shade400,
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 16, horizontal: 24),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(30)),
-                        ),
-                        child: const Text('Previous',
-                            style: TextStyle(fontWeight: FontWeight.bold)),
-                      ),
-                      ElevatedButton(
-                        onPressed: () {
-                          if (_currentQuestion < _questions.length - 1) {
-                            setState(() {
-                              _currentQuestion++;
-                            });
-                          } else {
-                            _showScore();
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue.shade600,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 16, horizontal: 24),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(30)),
-                        ),
-                        child: Text(
-                          _currentQuestion == _questions.length - 1
-                              ? 'Submit'
-                              : 'Next',
-                          style:
-                              const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
                 ],
               ),
             ),

@@ -30,22 +30,23 @@ class AuthService {
 
   // Signup method
   static Future<Map<String, dynamic>> signup(String name, String email, String password) async {
-    final url = Uri.parse('$baseUrl/auth/signup');
-    final response = await http.post(
-      url,
-      headers: {"Content-Type": "application/json"},
-      body: jsonEncode({"name": name, "email": email, "password": password}),
-    );
+  final url = Uri.parse('$baseUrl/auth/signup');
+  final response = await http.post(
+    url,
+    headers: {"Content-Type": "application/json"},
+    body: jsonEncode({"username": name, "email": email, "password": password}),
+  );
 
-    if (response.statusCode == 201) {
-      return {"success": true, "data": jsonDecode(response.body)};
-    } else {
-      return {
-        "success": false,
-        "message": jsonDecode(response.body)["message"] ?? "Signup failed"
-      };
-    }
+  if (response.statusCode == 201) {
+    return {"success": true, "data": jsonDecode(response.body)};
+  } else {
+    return {
+      "success": false,
+      "message": jsonDecode(response.body)["message"] ?? "Signup failed"
+    };
   }
+}
+
 
   // Get token method
   static String? getToken() {

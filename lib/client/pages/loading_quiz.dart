@@ -1,6 +1,5 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:quiz_app/auth/quiz_service.dart';
+import 'package:quiz_app/auth/socket_service.dart';
 import 'package:quiz_app/client/pages/take_Quiz.dart';
 import 'package:quiz_app/login.dart'; 
 
@@ -21,54 +20,55 @@ class WaitingRoomScreen extends StatefulWidget {
 }
 
 class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
-  Timer? _pollTimer;
-
   @override
   void initState() {
     super.initState();
-    _joinQuiz();
-    _startPolling();
+    _connectSocket();
   }
 
   @override
   void dispose() {
-    _pollTimer?.cancel();
+    LiveSocketService().disconnect();
     super.dispose();
   }
 
-  Future<void> _joinQuiz() async {
-    try {
-      await QuizService.joinQuiz(
-        quizCode: widget.quizCode,
-        playerName: widget.playerName,
-        profilePic: widget.profilePic,
-      );
-    } catch (e) {
-      print("Error joining quiz: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Failed to join quiz")),
-      );
-    }
-  }
+  void _connectSocket() {
+    final socketService = LiveSocketService();
+    socketService.connect("http://34.235.122.140:4000");
 
-  void _startPolling() {
-    _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
-      try {
-        final quizStarted = await QuizService.checkQuizStatus(quizCode: widget.quizCode);
-        if (quizStarted) {
-          _pollTimer?.cancel();
-          if (!mounted) return;
-
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (_) => TakeQuizScreen(quizId: widget.quizCode,nickname: widget.playerName,),
-            ),
+    // Join session as player
+    socketService.joinAsPlayer(
+      code: widget.quizCode,
+      name: widget.playerName,
+      callback: (response) {
+        if (response["success"] != true) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(response["message"] ?? "Failed to join session")),
           );
         }
-      } catch (e) {
-        print("Polling error: $e");
-      }
+      },
+    );
+
+    // Listen for host starting the quiz
+    socketService.onQuestionShow((questionData) {
+      // Navigate to TakeQuizScreen immediately
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => TakeQuizScreen(
+            quizId: widget.quizCode,
+            nickname: widget.playerName,
+          ),
+        ),
+      );
+    });
+
+    // Optional: listen for lobby updates (player list)
+    socketService.onLobbyUpdate((players) {
+      setState(() {
+        // You can display player list dynamically if needed
+      });
     });
   }
 
@@ -108,10 +108,7 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
 
               Text(
                 widget.playerName,
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
               ),
 
               const SizedBox(height: 20),
@@ -128,10 +125,8 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
               ),
 
               const SizedBox(height: 30),
-
               const CircularProgressIndicator(color: Colors.black),
               const SizedBox(height: 16),
-
               const Text(
                 "Waiting for host to start...",
                 style: TextStyle(fontSize: 18),

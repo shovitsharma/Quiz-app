@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:quiz_app/auth/quiz_service.dart';
-import 'package:quiz_app/submitted.dart';
+import 'package:quiz_app/quiz_created.dart';
 
 // --- DATA MODELS ---
 class Question {
@@ -180,7 +180,6 @@ class _QuizQuestionPageState extends State<QuizQuestionPage> {
 
   _saveOrUpdateCurrentQuestion();
 
-  // Pick date
   final DateTime? pickedDate = await showDatePicker(
     context: context,
     initialDate: DateTime.now(),
@@ -189,7 +188,6 @@ class _QuizQuestionPageState extends State<QuizQuestionPage> {
   );
   if (pickedDate == null) return;
 
-  // Pick time
   final TimeOfDay? pickedTime = await showTimePicker(
     context: context,
     initialTime: TimeOfDay.now(),
@@ -198,7 +196,6 @@ class _QuizQuestionPageState extends State<QuizQuestionPage> {
 
   if (!mounted) return;
 
-  // Enter quiz name
   final quizName = await showDialog<String>(
     context: context,
     builder: (context) => AlertDialog(
@@ -222,28 +219,36 @@ class _QuizQuestionPageState extends State<QuizQuestionPage> {
   setState(() => _isSubmitting = true);
 
   try {
-    // Create quiz using QuizService
-    final quizId = await QuizService.createQuiz(
-      name: quizName,
-      date: pickedDate.toIso8601String(), // <-- convert to ISO string
-      time: "${pickedTime.hour}:${pickedTime.minute}", // "HH:mm"
-    );
+    // 1️⃣ Create quiz
+    final createResult = await QuizService.createQuiz(title: quizName);
 
-    // Add all questions
+    if (!createResult["success"]) {
+      _showAlertDialog(createResult["message"]);
+      return;
+    }
+
+    final quizId = createResult["data"]["_id"];
+
+    // 2️⃣ Add all questions
     for (final q in _questions) {
-      await QuizService.addQuestion(
+      final addResult = await QuizService.addQuestion(
         quizId: quizId,
         questionText: q.questionText,
         options: q.options,
-        correctAnswerLabel: q.correctAnswerLabel,
+        correctAnswer: q.options.indexOf(q.correctAnswerLabel),
       );
+
+      if (!addResult["success"]) {
+        _showAlertDialog("Failed to add question: ${addResult["message"]}");
+        return; // stop further processing
+      }
     }
 
-    // Navigate to quiz created page
+    // 3️⃣ Navigate to QuizCreatedScreen
     if (mounted) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (_) => QuizCreatedPage(quizCode: quizId),
+          builder: (_) => QuizCreatedScreen(quizCode: quizId),
         ),
       );
     }
@@ -253,6 +258,9 @@ class _QuizQuestionPageState extends State<QuizQuestionPage> {
     setState(() => _isSubmitting = false);
   }
 }
+
+
+
 
 
 
