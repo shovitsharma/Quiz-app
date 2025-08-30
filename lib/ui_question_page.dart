@@ -1,9 +1,6 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'package:quiz_app/auth/auth_service.dart';
-
-import 'quiz_created.dart';
+import 'package:quiz_app/auth/quiz_service.dart';
+import 'package:quiz_app/submitted.dart';
 
 // --- DATA MODELS ---
 class Question {
@@ -176,120 +173,88 @@ class _QuizQuestionPageState extends State<QuizQuestionPage> {
   }
 
   Future<void> _handleSubmit() async {
-    if (!_areFieldsFilled || _correctAnswerLabel == null || !_validateUniqueness()) {
-      _handleValidation();
-      return;
-    }
-
-    _saveOrUpdateCurrentQuestion();
-
-    final DateTime? pickedDate = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime.now().subtract(const Duration(days: 365)),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-    );
-    if (pickedDate == null) return;
-
-    final TimeOfDay? pickedTime = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.now(),
-    );
-    if (pickedTime == null) return;
-
-    if (!mounted) return;
-
-    final quizName = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Set Quiz Name'),
-        content: TextField(
-          controller: _quizNameController,
-          decoration: const InputDecoration(hintText: 'Enter quiz name'),
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(_quizNameController.text),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-
-    if (quizName == null || quizName.isEmpty) return;
-
-    // --- Backend Integration ---
-    final token = AuthService.getToken();
-    if (token == null) {
-      _showAlertDialog('You must be logged in to create a quiz.');
-      return;
-    }
-
-    setState(() => _isSubmitting = true);
-
-    try {
-      // Step 1: Create quiz
-      final quizResponse = await http.post(
-        Uri.parse('http://34.235.122.140:4000/api/quiz/create'),
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer $token",
-        },
-        body: jsonEncode({
-          "name": quizName,
-          "date": pickedDate.toIso8601String(),
-          "time": "${pickedTime.hour}:${pickedTime.minute}",
-        }),
-      );
-
-      if (quizResponse.statusCode != 201) {
-        final data = jsonDecode(quizResponse.body);
-        _showAlertDialog('Quiz creation failed: ${data['message']}');
-        setState(() => _isSubmitting = false);
-        return;
-      }
-
-      final quizData = jsonDecode(quizResponse.body);
-      final String quizId = quizData['id'];
-
-      // Step 2: Submit questions
-      for (final q in _questions) {
-        final questionResponse = await http.post(
-          Uri.parse('http://34.235.122.140:4000/api/quiz/$quizId/question'),
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": "Bearer $token",
-          },
-          body: jsonEncode({
-            "questionText": q.questionText,
-            "options": q.options,
-            "correctAnswerLabel": q.correctAnswerLabel,
-          }),
-        );
-
-        if (questionResponse.statusCode != 201) {
-          final data = jsonDecode(questionResponse.body);
-          _showAlertDialog('Failed to add question: ${data['message']}');
-          setState(() => _isSubmitting = false);
-          return;
-        }
-      }
-
-      // Step 3: Navigate to QuizCreatedScreen
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (_) => QuizCreatedScreen(quizCode: quizId),
-          ),
-        );
-      }
-    } catch (e) {
-      _showAlertDialog('Error: $e');
-    } finally {
-      setState(() => _isSubmitting = false);
-    }
+  if (!_areFieldsFilled || _correctAnswerLabel == null || !_validateUniqueness()) {
+    _handleValidation();
+    return;
   }
+
+  _saveOrUpdateCurrentQuestion();
+
+  // Pick date
+  final DateTime? pickedDate = await showDatePicker(
+    context: context,
+    initialDate: DateTime.now(),
+    firstDate: DateTime.now().subtract(const Duration(days: 365)),
+    lastDate: DateTime.now().add(const Duration(days: 365)),
+  );
+  if (pickedDate == null) return;
+
+  // Pick time
+  final TimeOfDay? pickedTime = await showTimePicker(
+    context: context,
+    initialTime: TimeOfDay.now(),
+  );
+  if (pickedTime == null) return;
+
+  if (!mounted) return;
+
+  // Enter quiz name
+  final quizName = await showDialog<String>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Set Quiz Name'),
+      content: TextField(
+        controller: _quizNameController,
+        decoration: const InputDecoration(hintText: 'Enter quiz name'),
+        autofocus: true,
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(_quizNameController.text),
+          child: const Text('OK'),
+        ),
+      ],
+    ),
+  );
+
+  if (quizName == null || quizName.isEmpty) return;
+
+  setState(() => _isSubmitting = true);
+
+  try {
+    // Create quiz using QuizService
+    final quizId = await QuizService.createQuiz(
+      name: quizName,
+      date: pickedDate.toIso8601String(), // <-- convert to ISO string
+      time: "${pickedTime.hour}:${pickedTime.minute}", // "HH:mm"
+    );
+
+    // Add all questions
+    for (final q in _questions) {
+      await QuizService.addQuestion(
+        quizId: quizId,
+        questionText: q.questionText,
+        options: q.options,
+        correctAnswerLabel: q.correctAnswerLabel,
+      );
+    }
+
+    // Navigate to quiz created page
+    if (mounted) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => QuizCreatedPage(quizCode: quizId),
+        ),
+      );
+    }
+  } catch (e) {
+    _showAlertDialog('Error: $e');
+  } finally {
+    setState(() => _isSubmitting = false);
+  }
+}
+
+
 
   void _showAlertDialog(String message) {
     showDialog(

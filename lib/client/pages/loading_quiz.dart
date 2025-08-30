@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:quiz_app/auth/quiz_service.dart';
+import 'package:quiz_app/client/pages/take_Quiz.dart';
 import 'package:quiz_app/login.dart'; 
 
-class WaitingRoomScreen extends StatelessWidget {
+class WaitingRoomScreen extends StatefulWidget {
   final String playerName;
   final String profilePic;
   final String quizCode;
@@ -12,6 +15,62 @@ class WaitingRoomScreen extends StatelessWidget {
     required this.profilePic,
     required this.quizCode,
   });
+
+  @override
+  State<WaitingRoomScreen> createState() => _WaitingRoomScreenState();
+}
+
+class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
+  Timer? _pollTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _joinQuiz();
+    _startPolling();
+  }
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _joinQuiz() async {
+    try {
+      await QuizService.joinQuiz(
+        quizCode: widget.quizCode,
+        playerName: widget.playerName,
+        profilePic: widget.profilePic,
+      );
+    } catch (e) {
+      print("Error joining quiz: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Failed to join quiz")),
+      );
+    }
+  }
+
+  void _startPolling() {
+    _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
+      try {
+        final quizStarted = await QuizService.checkQuizStatus(quizCode: widget.quizCode);
+        if (quizStarted) {
+          _pollTimer?.cancel();
+          if (!mounted) return;
+
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => TakeQuizScreen(quizId: widget.quizCode,nickname: widget.playerName,),
+            ),
+          );
+        }
+      } catch (e) {
+        print("Polling error: $e");
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -41,15 +100,14 @@ class WaitingRoomScreen extends StatelessWidget {
               ),
               const SizedBox(height: 30),
 
-              // Profile pic
               CircleAvatar(
                 radius: 40,
-                backgroundImage: NetworkImage(profilePic),
+                backgroundImage: NetworkImage(widget.profilePic),
               ),
               const SizedBox(height: 15),
 
               Text(
-                playerName,
+                widget.playerName,
                 style: const TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.w600,
@@ -61,7 +119,7 @@ class WaitingRoomScreen extends StatelessWidget {
               const SizedBox(height: 20),
 
               Text(
-                "Quiz Code: $quizCode",
+                "Quiz Code: ${widget.quizCode}",
                 style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w500,
