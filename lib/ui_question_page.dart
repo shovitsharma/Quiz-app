@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:quiz_app/quiz_created.dart';
 
 // --- DATA MODELS ---
 class Question {
@@ -232,14 +233,15 @@ class _QuizQuestionPageState extends State<QuizQuestionPage> {
               );
               Navigator.of(context).pop();
 
-              print('--- QUIZ SUBMITTED ---');
-              print('Quiz Name: ${finalQuiz.name}');
-              print('Date: ${finalQuiz.date}');
-              print('Time: ${finalQuiz.time}');
-              print('Total Questions: ${finalQuiz.questions.length}');
-              for (var q in finalQuiz.questions) {
-                print('  - Question: ${q.questionText}, Correct: ${q.correctAnswerLabel}');
-              }
+              // Generate a random code (in real app, this comes from backend)
+            final String quizCode = (100000 + (DateTime.now().millisecondsSinceEpoch % 900000)).toString();
+
+            // Navigate to "Quiz Created Screen"
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(
+                builder: (context) => QuizCreatedScreen(quizCode: quizCode),
+              ),
+            );
             },
             child: const Text('OK'),
           ),

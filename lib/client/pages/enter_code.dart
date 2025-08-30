@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:quiz_app/client/pages/loading_quiz.dart';
 import 'package:quiz_app/login.dart';
 
 class EnterQuizCodeScreen extends StatelessWidget {
@@ -96,15 +97,14 @@ class EnterQuizCodeScreen extends StatelessWidget {
                     return;
                   }
 
-                  // TODO: Pass playerName, randomPic, and quizCode to next screen
-                  // Example:
-                  // Navigator.push(context, MaterialPageRoute(
-                  //   builder: (_) => TakeQuizScreen(
-                  //     name: playerName,
-                  //     profilePic: randomPic,
-                  //     code: quizCode,
-                  //   ),
-                  // ));
+                  Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => WaitingRoomScreen(
+                        playerName: playerName,
+                        profilePic: randomPic,
+                        quizCode: quizCode,
+                        ),
+                  ),
+                  );
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.black,
