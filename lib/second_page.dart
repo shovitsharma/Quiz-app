@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-
-
 import 'package:quiz_app/circles.dart';
 import 'package:quiz_app/login.dart';
 import 'package:quiz_app/logo.dart';
