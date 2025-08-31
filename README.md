@@ -122,8 +122,7 @@ flutter run
 
 -----
 
-\<details\>
-\<summary\>\<strong\>API Endpoints\</strong\>\</summary\>
+API Endpoints
 
   * `POST /api/auth/signup`: Register a new host.
   * `POST /api/auth/login`: Log in a host and receive a JWT.
@@ -132,10 +131,7 @@ flutter run
   * `POST /api/sessions/create`: Create a new live session from a quiz (requires auth).
   * `POST /api/sessions/join/:code`: Allows a player to join a session's database record.
 
-\</details\>
-
-\<details\>
-\<summary\>\<strong\>WebSocket Events (`/live` namespace)\</strong\>\</summary\>
+WebSocket Events
 
 #### Emitted by Client:
 
@@ -152,4 +148,3 @@ flutter run
   * `leaderboard:update`: Sent between questions with current scores.
   * `quiz:ended`: Sent when the quiz is over, with the final leaderboard.
 
-\</details\>
