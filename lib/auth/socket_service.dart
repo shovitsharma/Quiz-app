@@ -1,278 +1,148 @@
+import 'dart:async';
+import 'package:quiz_app/auth/live_models.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 
+/// A custom exception for Socket.IO related errors.
+class SocketException implements Exception {
+  final String message;
+  SocketException(this.message);
+
+  @override
+  String toString() => message;
+}
+
+/// Manages the real-time connection to the game server.
+/// Uses Streams to broadcast game events to the UI.
 class LiveSocketService {
-  static final LiveSocketService _instance = LiveSocketService._internal();
-  factory LiveSocketService() => _instance;
+  // --- Singleton Setup ---
   LiveSocketService._internal();
+  static final LiveSocketService instance = LiveSocketService._internal();
 
+  // --- Private Properties ---
   IO.Socket? _socket;
-  bool _isConnected = false;
+  static const String _serverUrl = "http://34.235.122.140:4000";
 
-  /// Get connection status
-  bool get isConnected => _isConnected;
+  // --- Stream Controllers ---
+  // These will broadcast events to any listening widgets in your app.
+  final _connectionStatusController = StreamController<bool>.broadcast();
+  final _lobbyUpdateController = StreamController<List<LobbyPlayer>>.broadcast();
+  final _questionController = StreamController<LiveQuestion>.broadcast();
+  final _leaderboardController = StreamController<List<LobbyPlayer>>.broadcast();
+  final _quizEndedController = StreamController<Map<String, dynamic>>.broadcast();
 
-  /// Connect to the live namespace - Fixed to use /live namespace
-  void connect(String serverUrl) {
-    // Disconnect existing connection
-    disconnect();
+  // --- Public Stream Getters ---
+  // Your UI will listen to these streams.
+  Stream<bool> get connectionStatus => _connectionStatusController.stream;
+  Stream<List<LobbyPlayer>> get lobbyUpdates => _lobbyUpdateController.stream;
+  Stream<LiveQuestion> get questions => _questionController.stream;
+  Stream<List<LobbyPlayer>> get leaderboardUpdates => _leaderboardController.stream;
+  Stream<Map<String, dynamic>> get quizEnded => _quizEndedController.stream;
+
+  // --- Core Methods ---
+
+  /// Connects to the server's '/live' namespace.
+  void connect() {
+    if (_socket?.connected ?? false) {
+      print("Already connected.");
+      return;
+    }
+    
+    disconnect(); // Ensure any old socket is disposed
 
     _socket = IO.io(
-      '$serverUrl/live', // Fixed: Backend uses /live namespace
-      IO.OptionBuilder()
-          .setTransports(['websocket'])
-          .disableAutoConnect()
-          .setTimeout(30000)
-          .setReconnectionAttempts(5)
-          .setReconnectionDelay(1000)
-          .build(),
+      '$_serverUrl/live',
+      IO.OptionBuilder().setTransports(['websocket']).disableAutoConnect().build(),
     );
 
     _setupEventListeners();
-    _socket?.connect();
+    _socket!.connect();
   }
 
-  /// Setup basic event listeners
-  void _setupEventListeners() {
-    _socket?.onConnect((_) {
-      print("Connected to live server");
-      _isConnected = true;
-    });
-
-    _socket?.onDisconnect((_) {
-      print("Disconnected from live server");
-      _isConnected = false;
-    });
-
-    _socket?.onConnectError((data) {
-      print("Connect error: $data");
-      _isConnected = false;
-    });
-
-    _socket?.onError((data) {
-      print("Socket error: $data");
-    });
-  }
-
-  /// Disconnect
+  /// Disconnects from the server and cleans up resources.
   void disconnect() {
-    if (_socket != null) {
-      _socket!.disconnect();
-      _socket!.dispose();
-      _socket = null;
-      _isConnected = false;
+    _socket?.disconnect();
+    _socket?.dispose();
+    _socket = null;
+    _connectionStatusController.add(false);
+  }
+
+  void _setupEventListeners() {
+    _socket!
+      ..onConnect((_) {
+        print("Socket connected successfully.");
+        _connectionStatusController.add(true);
+      })
+      ..onDisconnect((_) {
+        print("Socket disconnected.");
+        _connectionStatusController.add(false);
+      })
+      ..onConnectError((data) {
+        print("Connection Error: $data");
+        _connectionStatusController.add(false);
+      });
+
+    // Listen for server-sent events and add them to the appropriate stream
+    _socket!.on('lobby:update', (data) {
+      final players = (data as List).map((p) => LobbyPlayer.fromJson(p)).toList();
+      _lobbyUpdateController.add(players);
+    });
+    
+    _socket!.on('question:show', (data) {
+      final question = LiveQuestion.fromJson(data);
+      _questionController.add(question);
+    });
+
+    _socket!.on('leaderboard:update', (data) {
+       final leaderboard = (data as List).map((p) => LobbyPlayer.fromJson(p)).toList();
+      _leaderboardController.add(leaderboard);
+    });
+
+    _socket!.on('quiz:ended', (data) {
+      _quizEndedController.add(Map<String, dynamic>.from(data));
+    });
+  }
+
+  /// Helper to convert ACK callbacks into a Future.
+  Future<T> _emitWithAck<T>(String event, dynamic data) {
+    final completer = Completer<T>();
+    if (_socket?.connected != true) {
+      completer.completeError(SocketException("Not connected to the server."));
+      return completer.future;
     }
-  }
 
-  /// Check if socket is connected before emitting
-  bool _checkConnection() {
-    if (!_isConnected || _socket == null) {
-      print("Socket not connected. Please connect first.");
-      return false;
-    }
-    return true;
-  }
-
-  /// -------------------------
-  /// Player joins a session - Fixed to match backend response format
-  /// -------------------------
-  void joinAsPlayer({
-    required String code,
-    required String name,
-    required Function(Map<String, dynamic>) callback,
-  }) {
-    if (!_checkConnection()) return;
-
-    _socket?.emitWithAck(
-      'player:join',
-      {'code': code, 'name': name},
-      ack: (data) {
-        // Backend returns: { ok: true, sessionId, playerId, status }
-        // Convert to frontend expected format
-        final response = Map<String, dynamic>.from(data);
-        if (response['ok'] == true) {
-          callback({
-            "success": true, // Convert ok to success
-            "playerId": response['playerId'],
-            "sessionId": response['sessionId'],
-            "status": response['status'],
-          });
-        } else {
-          callback({
-            "success": false,
-            "message": response['error'] ?? 'Failed to join session',
-          });
-        }
-      },
-    );
-  }
-
-  /// -------------------------
-  /// Host joins a session - Fixed to match backend response format
-  /// -------------------------
-  void joinAsHost({
-    required String sessionId,
-    required String hostKey,
-    required Function(Map<String, dynamic>) callback,
-  }) {
-    if (!_checkConnection()) return;
-
-    _socket?.emitWithAck(
-      'host:join',
-      {'sessionId': sessionId, 'hostKey': hostKey},
-      ack: (data) {
-        // Backend returns: { ok: true, code, status, currentQuestionIndex }
-        final response = Map<String, dynamic>.from(data);
-        if (response['ok'] == true) {
-          callback({
-            "success": true, // Convert ok to success
-            "code": response['code'],
-            "status": response['status'],
-            "currentQuestionIndex": response['currentQuestionIndex'],
-          });
-        } else {
-          callback({
-            "success": false,
-            "message": response['error'] ?? 'Failed to join as host',
-          });
-        }
-      },
-    );
-  }
-
-  /// -------------------------
-  /// Host starts the quiz - Fixed response format
-  /// -------------------------
-  void startQuiz({required Function(Map<String, dynamic>) callback}) {
-    if (!_checkConnection()) return;
-
-    _socket?.emitWithAck('host:start', null, ack: (data) {
-      final response = Map<String, dynamic>.from(data);
+    _socket!.emitWithAck(event, data, ack: (response) {
       if (response['ok'] == true) {
-        callback({
-          "success": true,
-          "message": "Quiz started successfully",
-        });
+        completer.complete(response as T);
       } else {
-        callback({
-          "success": false,
-          "message": response['error'] ?? 'Failed to start quiz',
-        });
+        completer.completeError(SocketException(response['error'] ?? 'Unknown socket error'));
       }
     });
+
+    return completer.future;
   }
+  
+  // --- Actions (Emit Events) ---
 
-  /// -------------------------
-  /// Host goes to next question - Fixed response format
-  /// -------------------------
-  void nextQuestion({required Function(Map<String, dynamic>) callback}) {
-    if (!_checkConnection()) return;
+  Future<Map<String, dynamic>> joinAsPlayer({required String code, required String name}) =>
+      _emitWithAck('player:join', {'code': code, 'name': name});
 
-    _socket?.emitWithAck('host:next', null, ack: (data) {
-      final response = Map<String, dynamic>.from(data);
-      if (response['ok'] == true) {
-        callback({
-          "success": true,
-          "ended": response['ended'] ?? false,
-          "message": response['ended'] == true ? "Quiz ended" : "Next question loaded",
-        });
-      } else {
-        callback({
-          "success": false,
-          "message": response['error'] ?? 'Failed to go to next question',
-        });
-      }
-    });
-  }
+  Future<Map<String, dynamic>> joinAsHost({required String sessionId, required String hostKey}) =>
+      _emitWithAck('host:join', {'sessionId': sessionId, 'hostKey': hostKey});
 
-  /// -------------------------
-  /// Player submits answer - Fixed to match backend expected format
-  /// -------------------------
-  void submitAnswer({
-    required int questionIndex,
-    required int answerIndex,
-    required Function(Map<String, dynamic>) callback,
-  }) {
-    if (!_checkConnection()) return;
+  Future<Map<String, dynamic>> startQuiz() => _emitWithAck('host:start', null);
+  
+  Future<Map<String, dynamic>> nextQuestion() => _emitWithAck('host:next', null);
 
-    // Backend expects: { questionIndex, answerIndex }
-    // No playerId needed - backend uses socket.id
-    _socket?.emitWithAck(
-      'player:answer',
-      {
-        'questionIndex': questionIndex,
-        'answerIndex': answerIndex,
-      },
-      ack: (data) {
-        final response = Map<String, dynamic>.from(data);
-        if (response['ok'] == true) {
-          callback({
-            "success": true,
-            "correct": response['correct'],
-            "message": "Answer submitted successfully",
-          });
-        } else {
-          callback({
-            "success": false,
-            "message": response['error'] ?? 'Failed to submit answer',
-          });
-        }
-      },
-    );
-  }
+  Future<Map<String, dynamic>> submitAnswer({required int questionIndex, required int answerIndex}) =>
+      _emitWithAck('player:answer', {'questionIndex': questionIndex, 'answerIndex': answerIndex});
 
-  /// -------------------------
-  /// Listen for live events - Fixed field names to match backend
-  /// -------------------------
-  void onLobbyUpdate(Function(List<Map<String, dynamic>>) callback) {
-    _socket?.on('lobby:update', (data) {
-      try {
-        final players = (data as List)
-            .map((e) => Map<String, dynamic>.from(e))
-            .toList();
-        callback(players);
-      } catch (e) {
-        print("Error parsing lobby update: $e");
-      }
-    });
-  }
-
-  void onQuestionShow(Function(Map<String, dynamic>) callback) {
-    _socket?.on('question:show', (data) {
-      try {
-        // Backend emits: { index, text, options, timeLimitSec }
-        final questionData = Map<String, dynamic>.from(data);
-        callback({
-          "index": questionData['index'],
-          "questionText": questionData['text'], // Convert text to questionText
-          "options": questionData['options'],
-          "timeLimitSec": questionData['timeLimitSec'],
-        });
-      } catch (e) {
-        print("Error parsing question show: $e");
-      }
-    });
-  }
-
-  void onLeaderboardUpdate(Function(List<Map<String, dynamic>>) callback) {
-    _socket?.on('leaderboard:update', (data) {
-      try {
-        final leaderboard = (data as List)
-            .map((e) => Map<String, dynamic>.from(e))
-            .toList();
-        callback(leaderboard);
-      } catch (e) {
-        print("Error parsing leaderboard update: $e");
-      }
-    });
-  }
-
-  void onSessionEnded(Function(Map<String, dynamic>) callback) {
-    _socket?.on('session:ended', (data) {
-      try {
-        callback(Map<String, dynamic>.from(data));
-      } catch (e) {
-        print("Error parsing session ended: $e");
-      }
-    });
+  /// Call this when the service is no longer needed to prevent memory leaks.
+  void dispose() {
+    _connectionStatusController.close();
+    _lobbyUpdateController.close();
+    _questionController.close();
+    _leaderboardController.close();
+    _quizEndedController.close();
+    disconnect();
   }
 }

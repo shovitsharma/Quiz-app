@@ -1,81 +1,82 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:quiz_app/auth/live_models.dart';
 import 'package:quiz_app/auth/socket_service.dart';
-import 'package:quiz_app/client/pages/take_Quiz.dart';
+import 'package:quiz_app/client/pages/take_quiz.dart';
 
-class WaitingRoomScreen extends StatefulWidget {
+class PlayerLobbyScreen extends StatefulWidget {
+  final String sessionId;
+  final String playerId;
   final String playerName;
-  final String profilePic;
   final String quizCode;
 
-  const WaitingRoomScreen({
+  const PlayerLobbyScreen({
     super.key,
+    required this.sessionId,
+    required this.playerId,
     required this.playerName,
-    required this.profilePic,
     required this.quizCode,
   });
 
   @override
-  State<WaitingRoomScreen> createState() => _WaitingRoomScreenState();
+  State<PlayerLobbyScreen> createState() => _PlayerLobbyScreenState();
 }
 
-class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
-  String? _playerId;
+class _PlayerLobbyScreenState extends State<PlayerLobbyScreen> {
+  // --- STATE ---
+  final _socketService = LiveSocketService.instance;
+  StreamSubscription? _lobbySubscription;
+  StreamSubscription? _questionSubscription;
+  List<LobbyPlayer> _players = [];
 
   @override
   void initState() {
     super.initState();
-    _connectSocket();
+    // This screen's job is to LISTEN to events for the session we just joined.
+    _subscribeToEvents();
   }
 
   @override
   void dispose() {
-    LiveSocketService().disconnect();
+    // Clean up subscriptions to prevent memory leaks.
+    _lobbySubscription?.cancel();
+    _questionSubscription?.cancel();
+    // We DO NOT disconnect here, as the connection is needed for the quiz screen.
     super.dispose();
   }
 
-  void _connectSocket() {
-    final socketService = LiveSocketService();
-    socketService.connect("http://34.235.122.140:4000"); // Fixed: Service handles /live namespace
+  // --- LOGIC ---
 
-    // Join session as player
-    socketService.joinAsPlayer(
-      code: widget.quizCode,
-      name: widget.playerName,
-      callback: (response) {
-        if (response["success"] != true) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content:
-                    Text(response["message"] ?? "Failed to join session")),
-          );
-        } else {
-          // Save playerId for submitting answers later
-          _playerId = response["playerId"];
-        }
-      },
-    );
+  // In player_lobby_screen.dart
 
-    // Listen for host starting the quiz
-    socketService.onQuestionShow((questionData) {
-      if (!mounted || _playerId == null) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => TakeQuizScreen(
-            quizId: widget.quizCode,
-            nickname: widget.playerName,
-          ),
-        ),
-      );
-    });
-
-    // Optional: listen for lobby updates (player list)
-    socketService.onLobbyUpdate((players) {
+  /// Subscribes to the streams from the LiveSocketService.
+  void _subscribeToEvents() {
+    // Listen for updates to the player list.
+    _lobbySubscription = _socketService.lobbyUpdates.listen((players) {
       setState(() {
-        // Can display dynamic player list if needed
+        _players = players;
       });
     });
+
+    // Listen for the 'question:show' event, which signals the start of the quiz.
+    _questionSubscription = _socketService.questions.listen((question) {
+      if (mounted) {
+        // When the first question arrives, navigate to the quiz screen.
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => TakeQuizScreen(
+              sessionId: widget.sessionId,
+              playerId: widget.playerId,
+              playerName: widget.playerName, // ✨ ADD THIS LINE
+              initialQuestion: question,
+            ),
+          ),
+        );
+      }
+    });
   }
+
+  // --- UI BUILD ---
 
   @override
   Widget build(BuildContext context) {
@@ -99,44 +100,59 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                'Waiting Room',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 30),
-              CircleAvatar(
-                radius: 40,
-                backgroundImage: NetworkImage(widget.profilePic),
-              ),
-              const SizedBox(height: 15),
               Text(
-                widget.playerName,
-                style: const TextStyle(
-                    fontSize: 22, fontWeight: FontWeight.w600),
+                'Joined! - Code: ${widget.quizCode}',
+                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
               ),
-              const SizedBox(height: 20),
-              const Divider(thickness: 0.3, color: Colors.black),
-              const SizedBox(height: 20),
-              Text(
-                "Quiz Code: ${widget.quizCode}",
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.grey,
-                ),
-              ),
-              const SizedBox(height: 30),
-              const CircularProgressIndicator(color: Colors.black),
               const SizedBox(height: 16),
               const Text(
-                "Waiting for host to start...",
-                style: TextStyle(fontSize: 18),
+                'You\'re in. See who else is here!',
+                style: TextStyle(fontSize: 16, color: Colors.grey),
               ),
+              const SizedBox(height: 24),
+              _buildPlayerList(),
+              const SizedBox(height: 24),
+              const CircularProgressIndicator(color: Colors.black),
+              const SizedBox(height: 16),
+              const Text("Waiting for the host to start...", style: TextStyle(fontSize: 16)),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  // --- WIDGET BUILDER ---
+
+  /// A live-updating list of players in the lobby.
+  Widget _buildPlayerList() {
+    return Container(
+      height: 200, // Give the list a fixed height within the card
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: _players.isEmpty
+          ? const Center(child: Text("You're the first one here!"))
+          : ListView.builder(
+              itemCount: _players.length,
+              itemBuilder: (context, index) {
+                final player = _players[index];
+                final isYou = player.name == widget.playerName;
+                return ListTile(
+                  leading: CircleAvatar(
+                    child: Text('${index + 1}'),
+                  ),
+                  title: Text(
+                    player.name,
+                    style: TextStyle(
+                      fontWeight: isYou ? FontWeight.bold : FontWeight.normal,
+                    ),
+                  ),
+                  trailing: isYou ? const Text(" (You)") : null,
+                );
+              },
+            ),
     );
   }
 }

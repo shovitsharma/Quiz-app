@@ -21,58 +21,77 @@ class HostLobbyScreen extends StatefulWidget {
 }
 
 class _HostLobbyScreenState extends State<HostLobbyScreen> {
-  // --- STATE ---
   final _socketService = LiveSocketService.instance;
+  // ✨ We now need a subscription for the connection status
+  StreamSubscription? _connectionSubscription;
   StreamSubscription? _lobbySubscription;
+  StreamSubscription? _questionSubscription;
   List<LobbyPlayer> _players = [];
   bool _isStartingQuiz = false;
 
   @override
   void initState() {
     super.initState();
-    _connectAndJoin();
-
-    // Listen to the stream of lobby updates to rebuild the UI in real-time
-    _lobbySubscription = _socketService.lobbyUpdates.listen((players) {
-      setState(() {
-        _players = players;
-      });
-    });
+    // ✨ First, subscribe to all events
+    _subscribeToEvents();
+    // ✨ Then, initiate the connection. The listener will handle the rest.
+    _socketService.connect();
   }
 
   @override
   void dispose() {
-    // Clean up the subscription and disconnect to prevent memory leaks
+    // ✨ Cancel the new subscription too
+    _connectionSubscription?.cancel();
     _lobbySubscription?.cancel();
+    _questionSubscription?.cancel();
     _socketService.disconnect();
     super.dispose();
   }
 
-  // --- LOGIC ---
+  // ✨ REFACTORED LOGIC to wait for connection
+  void _subscribeToEvents() {
+    // 1. Listen for the connection status itself.
+    _connectionSubscription = _socketService.connectionStatus.listen((isConnected) {
+      if (isConnected) {
+        // 2. ONLY when connected, try to join as the host.
+        print("Connection established. Now joining as host...");
+        _joinAsHost();
+      } else {
+        print("Socket disconnected.");
+      }
+    });
 
-  /// Connects to the socket server and joins the session as the host.
-  Future<void> _connectAndJoin() async {
+    // These listeners will now only receive data after a successful connection.
+    _lobbySubscription = _socketService.lobbyUpdates.listen((players) {
+      setState(() { _players = players; });
+    });
+
+    _questionSubscription = _socketService.questions.listen((question) {
+      if (mounted) {
+        print("Quiz started! First question received.");
+        // Navigator.of(context).pushReplacement(...);
+      }
+    });
+  }
+
+  Future<void> _joinAsHost() async {
     try {
-      _socketService.connect();
-      // Authenticate this client as the host of the session
       await _socketService.joinAsHost(
         sessionId: widget.sessionId,
         hostKey: widget.hostKey,
       );
+      print("Successfully joined as host.");
     } on SocketException catch (e) {
+      print("Error during host:join -> ${e.message}");
       if (mounted) _showErrorDialog(e.message);
     }
   }
 
-  /// Sends the command to the server to start the quiz for all players.
   Future<void> _handleStartQuiz() async {
+    // ... this method remains the same ...
     setState(() => _isStartingQuiz = true);
     try {
       await _socketService.startQuiz();
-      // On success, the server will emit the first question.
-      // We would navigate to the Host's question-control screen here.
-      // Navigator.of(context).push(MaterialPageRoute(builder: (_) => HostQuestionScreen()));
-      print("Quiz started successfully!");
     } on SocketException catch (e) {
       if (mounted) _showErrorDialog(e.message);
     } finally {
@@ -80,8 +99,8 @@ class _HostLobbyScreenState extends State<HostLobbyScreen> {
     }
   }
 
-  // --- UI FEEDBACK ---
   void _showErrorDialog(String message) {
+    // ... this method remains the same ...
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -92,13 +111,11 @@ class _HostLobbyScreenState extends State<HostLobbyScreen> {
     );
   }
 
-  // --- UI BUILD ---
   @override
   Widget build(BuildContext context) {
+    // ... the entire build method and its helpers remain unchanged ...
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Host Lobby'),
-      ),
+      appBar: AppBar(title: const Text('Host Lobby')),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24.0),
@@ -117,8 +134,6 @@ class _HostLobbyScreenState extends State<HostLobbyScreen> {
       ),
     );
   }
-
-  // --- WIDGET BUILDERS ---
 
   Widget _buildJoinCodeCard() {
     return Card(

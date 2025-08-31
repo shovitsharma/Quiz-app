@@ -1,387 +1,214 @@
 import 'package:flutter/material.dart';
+import 'package:quiz_app/auth/auth_service.dart';
 import 'package:quiz_app/auth/live_quizservice.dart';
 import 'package:quiz_app/auth/quiz_service.dart';
-import 'package:quiz_app/quiz_created.dart';
+import 'package:quiz_app/host_lobbby.dart';
+import 'package:quiz_app/login.dart'; // Assuming QuizPageTemplate is in here
 
 // --- DATA MODELS ---
 class Question {
-  String questionText;
+  String text;
   List<String> options;
-  String correctAnswerLabel;
+  int correctIndex;
 
-  Question({
-    required this.questionText,
-    required this.options,
-    required this.correctAnswerLabel,
-  });
+  Question({required this.text, required this.options, required this.correctIndex});
+
+  Map<String, dynamic> toJson() {
+    return {'text': text, 'options': options, 'correctIndex': correctIndex};
+  }
 }
 
-class Quiz {
-  final String name;
-  final DateTime date;
-  final TimeOfDay time;
-  final List<Question> questions;
-
-  Quiz({
-    required this.name,
-    required this.date,
-    required this.time,
-    required this.questions,
-  });
-}
-
-class QuizQuestionPage extends StatefulWidget {
-  const QuizQuestionPage({super.key});
+// --- WIDGET ---
+class QuizCreationPage extends StatefulWidget {
+  const QuizCreationPage({super.key});
 
   @override
-  State<QuizQuestionPage> createState() => _QuizQuestionPageState();
+  State<QuizCreationPage> createState() => _QuizCreationPageState();
 }
 
-class _QuizQuestionPageState extends State<QuizQuestionPage> {
-  // --- STATE VARIABLES ---
+class _QuizCreationPageState extends State<QuizCreationPage> {
+  // --- STATE ---
+  final _formKey = GlobalKey<FormState>();
+  final _quizTitleController = TextEditingController();
   final _questionController = TextEditingController();
-  final _optionAController = TextEditingController();
-  final _optionBController = TextEditingController();
-  final _optionCController = TextEditingController();
-  final _optionDController = TextEditingController();
-  final _quizNameController = TextEditingController();
-
-  String? _correctAnswerLabel;
-  bool _areFieldsFilled = false;
-  bool _isSubmitting = false;
-
+  final List<TextEditingController> _optionControllers =
+      List.generate(4, (_) => TextEditingController());
+  int? _selectedCorrectIndex;
   final List<Question> _questions = [];
   int _currentQuestionIndex = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _questionController.addListener(_validateFields);
-    _optionAController.addListener(_validateFields);
-    _optionBController.addListener(_validateFields);
-    _optionCController.addListener(_validateFields);
-    _optionDController.addListener(_validateFields);
-  }
+  bool _isSavingAndHosting = false;
 
   @override
   void dispose() {
+    _quizTitleController.dispose();
     _questionController.dispose();
-    _optionAController.dispose();
-    _optionBController.dispose();
-    _optionCController.dispose();
-    _optionDController.dispose();
-    _quizNameController.dispose();
+    for (var controller in _optionControllers) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
-  void _validateFields() {
-    setState(() {
-      _areFieldsFilled = _questionController.text.isNotEmpty &&
-          _optionAController.text.isNotEmpty &&
-          _optionBController.text.isNotEmpty &&
-          _optionCController.text.isNotEmpty &&
-          _optionDController.text.isNotEmpty;
-    });
-  }
+  // --- LOGIC ---
 
-  bool _validateUniqueness() {
-    final List<String> allTexts = [
-      _questionController.text.trim(),
-      _optionAController.text.trim(),
-      _optionBController.text.trim(),
-      _optionCController.text.trim(),
-      _optionDController.text.trim(),
-    ];
-    final Set<String> uniqueTexts = Set<String>.from(allTexts);
-    if (uniqueTexts.length < allTexts.length) {
-      _showAlertDialog('Duplicate content found. Ensure question and options are unique.');
-      return false;
-    }
-    return true;
-  }
-
-  void _saveOrUpdateCurrentQuestion() {
-    final newQuestion = Question(
-      questionText: _questionController.text.trim(),
-      options: [
-        _optionAController.text.trim(),
-        _optionBController.text.trim(),
-        _optionCController.text.trim(),
-        _optionDController.text.trim(),
-      ],
-      correctAnswerLabel: _correctAnswerLabel!,
-    );
-
-    if (_currentQuestionIndex < _questions.length) {
-      _questions[_currentQuestionIndex] = newQuestion;
-    } else {
-      _questions.add(newQuestion);
+  Future<void> _handleLogout() async {
+    await AuthService.instance.logout();
+    if (mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginPage()),
+        (route) => false,
+      );
     }
   }
 
-  void _loadQuestionData(int index) {
-    if (index < _questions.length) {
-      final question = _questions[index];
-      _questionController.text = question.questionText;
-      _optionAController.text = question.options[0];
-      _optionBController.text = question.options[1];
-      _optionCController.text = question.options[2];
-      _optionDController.text = question.options[3];
-      _correctAnswerLabel = question.correctAnswerLabel;
-    }
-  }
-
-  void _clearForm() {
-    _questionController.clear();
-    _optionAController.clear();
-    _optionBController.clear();
-    _optionCController.clear();
-    _optionDController.clear();
-    _correctAnswerLabel = null;
-  }
-
-  void _handleNext() {
-    if (!_areFieldsFilled || _correctAnswerLabel == null || !_validateUniqueness()) {
-      _handleValidation();
+  Future<void> _saveQuizAndHost() async {
+    if (_quizTitleController.text.trim().isEmpty) {
+      _showErrorDialog('Please provide a title for your quiz.');
       return;
     }
-    _saveOrUpdateCurrentQuestion();
-    setState(() {
-      _currentQuestionIndex++;
-      if (_currentQuestionIndex < _questions.length) {
-        _loadQuestionData(_currentQuestionIndex);
-      } else {
-        _clearForm();
+    if (_questions.isEmpty) {
+      _showErrorDialog('Please add at least one question.');
+      return;
+    }
+
+    setState(() => _isSavingAndHosting = true);
+
+    try {
+      final questionsPayload = _questions.map((q) => q.toJson()).toList();
+      final quizData = await QuizService.instance.createQuiz(
+        title: _quizTitleController.text.trim(),
+        questions: questionsPayload,
+      );
+      final newQuizId = quizData['quiz']['_id'];
+
+      final sessionData = await LiveSessionService.instance.createSession(quizId: newQuizId);
+
+      if (mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => HostLobbyScreen(
+              sessionId: sessionData['sessionId'],
+              hostKey: sessionData['hostKey'],
+              joinCode: sessionData['code'],
+            ),
+          ),
+        );
+        _clearFullForm();
       }
+    } catch (e) {
+      _showErrorDialog(e.toString());
+    } finally {
+      if (mounted) {
+        setState(() => _isSavingAndHosting = false);
+      }
+    }
+  }
+
+  void _clearFullForm() {
+    setState(() {
+      _quizTitleController.clear();
+      _questions.clear();
+      _navigateToQuestion(0);
     });
   }
 
-  void _handlePrevious() {
-    if (_currentQuestionIndex > 0) {
+  void _saveAndContinue() {
+    if (!_formKey.currentState!.validate()) return;
+    if (_selectedCorrectIndex == null) {
+      _showErrorDialog('Please select a correct answer.');
+      return;
+    }
+    final newQuestion = Question(
+      text: _questionController.text.trim(),
+      options: _optionControllers.map((c) => c.text.trim()).toList(),
+      correctIndex: _selectedCorrectIndex!,
+    );
+    setState(() {
+      if (_currentQuestionIndex < _questions.length) {
+        _questions[_currentQuestionIndex] = newQuestion;
+      } else {
+        _questions.add(newQuestion);
+      }
+      _navigateToQuestion(_questions.length);
+    });
+  }
+
+  void _deleteCurrentQuestion() {
+    if (_currentQuestionIndex < _questions.length) {
       setState(() {
-        _currentQuestionIndex--;
-        _loadQuestionData(_currentQuestionIndex);
+        _questions.removeAt(_currentQuestionIndex);
+        final newIndex = _currentQuestionIndex >= _questions.length
+            ? _questions.length
+            : _currentQuestionIndex;
+        _navigateToQuestion(newIndex);
       });
     }
   }
 
-  void _handleValidation() {
-    if (!_areFieldsFilled) {
-      _showAlertDialog('Please fill in all fields.');
-    } else if (_correctAnswerLabel == null) {
-      _showAlertDialog('Please select the correct answer.');
-    } else if (!_validateUniqueness()) {}
-  }
-
- int _labelToIndex(String label) {
-  switch (label) {
-    case 'A.': return 0;
-    case 'B.': return 1;
-    case 'C.': return 2;
-    case 'D.': return 3;
-    default: return -1;
-  }
-}
-
- 
- Future<void> _handleSubmitAndHost() async {
-  if (!_areFieldsFilled || _correctAnswerLabel == null || !_validateUniqueness()) {
-    _handleValidation();
-    return;
-  }
-
-  _saveOrUpdateCurrentQuestion();
-
-  // Pick date (optional, can remove if not needed)
-  final DateTime? pickedDate = await showDatePicker(
-    context: context,
-    initialDate: DateTime.now(),
-    firstDate: DateTime.now().subtract(const Duration(days: 365)),
-    lastDate: DateTime.now().add(const Duration(days: 365)),
-  );
-  if (pickedDate == null) return;
-
-  // Pick time (optional)
-  final TimeOfDay? pickedTime = await showTimePicker(
-    context: context,
-    initialTime: TimeOfDay.now(),
-  );
-  if (pickedTime == null) return;
-
-  // Quiz name dialog
-  final quizName = await showDialog<String>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('Set Quiz Name'),
-      content: TextField(
-        controller: _quizNameController,
-        decoration: const InputDecoration(hintText: 'Enter quiz name'),
-        autofocus: true,
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(_quizNameController.text),
-          child: const Text('OK'),
-        ),
-      ],
-    ),
-  );
-
-  if (quizName == null || quizName.isEmpty) return;
-
-  setState(() => _isSubmitting = true);
-
-  try {
-    // 1️⃣ Create quiz
-    final createResult = await QuizService.createQuiz(title: quizName);
-    if (!createResult["success"]) {
-      _showAlertDialog(createResult["message"]);
-      return;
-    }
-
-    final quizId = createResult["data"]["quiz"]["_id"];
-
-    // 2️⃣ Add all questions
-    for (final q in _questions) {
-      final addResult = await QuizService.addQuestion(
-        quizId: quizId,
-        questionText: q.questionText,
-        options: q.options,
-        correctAnswer: _labelToIndex(q.correctAnswerLabel),
-      );
-
-      if (!addResult["success"]) {
-        _showAlertDialog("Failed to add question: ${addResult["message"]}");
-        return;
+  void _navigateToQuestion(int index) {
+    setState(() {
+      _currentQuestionIndex = index;
+      if (index < _questions.length) {
+        _loadQuestionData(index);
+      } else {
+        _clearQuestionForm();
       }
-    }
-
-    // 3️⃣ Create a live session
-    final sessionResult = await LiveSessionService.createSession(quizId: quizId);
-    if (!sessionResult["success"]) {
-      _showAlertDialog(sessionResult["message"]);
-      return;
-    }
-
-    final sessionCode = sessionResult["data"]["code"]; // this is the code players will use
-
-    // 4️⃣ Navigate to QuizCreatedScreen with session code
-    if (mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => QuizCreatedScreen(quizCode: sessionCode),
-        ),
-      );
-    }
-  } catch (e) {
-    _showAlertDialog('Error: $e');
-  } finally {
-    setState(() => _isSubmitting = false);
+    });
   }
-}
 
+  void _loadQuestionData(int index) {
+    final question = _questions[index];
+    _questionController.text = question.text;
+    for (int i = 0; i < 4; i++) {
+      _optionControllers[i].text = question.options[i];
+    }
+    _selectedCorrectIndex = question.correctIndex;
+  }
 
+  void _clearQuestionForm() {
+    _formKey.currentState?.reset();
+    _questionController.clear();
+    for (var controller in _optionControllers) {
+      controller.clear();
+    }
+    _selectedCorrectIndex = null;
+  }
 
-
-
-
-
-  void _showAlertDialog(String message) {
+  void _showErrorDialog(String message) {
+    if (!mounted) return;
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Alert'),
+        title: const Text('Error'),
         content: Text(message),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK')),
-        ],
+        actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK'))],
       ),
     );
   }
 
-  // UI BUILDERS BELOW (unchanged from your existing code)
+  // --- UI BUILD ---
   @override
   Widget build(BuildContext context) {
-    final bool isFormComplete = _areFieldsFilled && _correctAnswerLabel != null;
+    bool isEditing = _currentQuestionIndex < _questions.length;
 
-    return Scaffold(
-      backgroundColor: Colors.grey[100],
-      body: Stack(
+    return QuizPageTemplate(
+      child: Column(
         children: [
-          _buildBackground(),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0),
+          _buildAppBar(),
+          const SizedBox(height: 16),
+          Expanded(
+            child: SingleChildScrollView(
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(
-                    child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          const SizedBox(height: 32),
-                          _buildQuestionTextField(),
-                          const SizedBox(height: 30),
-                          _buildOption('A.', _optionAController, Colors.blue.shade700),
-                          const SizedBox(height: 16),
-                          _buildOption('B.', _optionBController, Colors.yellow.shade700),
-                          const SizedBox(height: 16),
-                          _buildOption('C.', _optionCController, Colors.green.shade600),
-                          const SizedBox(height: 16),
-                          _buildOption('D.', _optionDController, Colors.red.shade600),
-                        ],
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 20.0),
-                    child: Column(
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: ElevatedButton(
-                                onPressed: _currentQuestionIndex > 0 ? _handlePrevious : null,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.yellow.shade700,
-                                  foregroundColor: Colors.white,
-                                  disabledBackgroundColor: Colors.grey.shade400,
-                                  padding: const EdgeInsets.symmetric(vertical: 16),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                                ),
-                                child: const Text('Previous', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: ElevatedButton(
-                                onPressed: isFormComplete ? _handleNext : _handleValidation,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: isFormComplete ? Colors.grey.shade700 : Colors.grey.shade400,
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(vertical: 16),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                                ),
-                                child: const Text('Next', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        ElevatedButton(
-                          onPressed: isFormComplete && !_isSubmitting ? _handleSubmitAndHost : null,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue.shade600,
-                            foregroundColor: Colors.white,
-                            minimumSize: const Size(double.infinity, 54),
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                          ),
-                          child: Text(_isSubmitting ? 'Submitting...' : 'Submit', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                        ),
-                      ],
-                    ),
-                  ),
+                  _buildQuizTitleField(),
+                  const SizedBox(height: 16),
+                  _buildQuestionNavigator(),
+                  const SizedBox(height: 16),
+                  const Divider(thickness: 1, color: Colors.black26),
+                  _buildQuestionHeader(isEditing),
+                  _buildQuestionForm(),
+                  const SizedBox(height: 24),
+                  _buildActionButtons(),
                 ],
               ),
             ),
@@ -391,60 +218,177 @@ class _QuizQuestionPageState extends State<QuizQuestionPage> {
     );
   }
 
-  Widget _buildOption(String label, TextEditingController controller, Color borderColor) {
-    final bool isSelected = _correctAnswerLabel == label;
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: isSelected ? Colors.green.shade600 : borderColor, width: 2),
-        borderRadius: BorderRadius.circular(15),
+  // --- WIDGET BUILDERS ---
+
+  Widget _buildAppBar() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        const Text(
+          'Create & Host Quiz',
+          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+        ),
+        IconButton(
+          icon: const Icon(Icons.logout),
+          tooltip: 'Logout',
+          onPressed: _handleLogout,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildQuizTitleField() {
+    return TextFormField(
+      controller: _quizTitleController,
+      decoration: InputDecoration(
+        hintText: 'Enter Quiz Title',
+        filled: true,
+        fillColor: Colors.white,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey.shade400, width: 1.5),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Colors.black, width: 2.0),
+        ),
       ),
+      validator: (v) => (v == null || v.isEmpty) ? 'Title is required' : null,
+    );
+  }
+
+  Widget _buildQuestionNavigator() {
+    return SizedBox(
+      height: 40,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: _questions.length + 1,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          bool isSelected = index == _currentQuestionIndex;
+          return ActionChip(
+            label: Text('${index + 1}'),
+            backgroundColor: isSelected ? Colors.black : Colors.white,
+            labelStyle: TextStyle(
+                color: isSelected ? Colors.white : Colors.black,
+                fontWeight: FontWeight.bold),
+            onPressed: () => _navigateToQuestion(index),
+            side: BorderSide(color: Colors.grey.shade400),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildQuestionHeader(bool isEditing) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Padding(padding: const EdgeInsets.only(left: 20, right: 12), child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold))),
-          Expanded(child: TextField(controller: controller, decoration: const InputDecoration(border: InputBorder.none, contentPadding: EdgeInsets.symmetric(vertical: 18)))),
-          GestureDetector(
-            onTap: () {
-              if (_areFieldsFilled) {
-                setState(() => _correctAnswerLabel = label);
-              }
-            },
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Icon(isSelected ? Icons.check_circle : Icons.radio_button_unchecked, color: isSelected ? Colors.green.shade600 : Colors.grey.shade400),
-            ),
+          Text(
+            '${isEditing ? "Editing" : "New"} Question #${_currentQuestionIndex + 1}',
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
+          if (isEditing)
+            IconButton(
+              icon: Icon(Icons.delete_outline, color: Colors.red.shade700),
+              onPressed: _deleteCurrentQuestion,
+              tooltip: 'Delete this question',
+            )
         ],
       ),
     );
   }
 
-  Widget _buildQuestionTextField() => Container(
-        height: 200,
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 5))]),
-        child: TextField(
+  Widget _buildQuestionForm() {
+    return Form(
+      key: _formKey,
+      child: Column(children: [
+        TextFormField(
           controller: _questionController,
-          maxLines: null,
-          expands: true,
-          textAlignVertical: TextAlignVertical.top,
-          decoration: const InputDecoration(hintText: 'Enter your question', contentPadding: EdgeInsets.all(20), border: InputBorder.none),
+          decoration: InputDecoration(
+            hintText: 'Enter question text...',
+            filled: true,
+            fillColor: Colors.white,
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none),
+          ),
+          validator: (v) => (v == null || v.isEmpty) ? 'Question text is required' : null,
+          maxLines: 3,
         ),
-      );
-
-  Widget _buildBackground() => ClipPath(clipper: _BackgroundClipper(), child: Container(height: 250, color: Colors.red.shade400));
-}
-
-class _BackgroundClipper extends CustomClipper<Path> {
-  @override
-  Path getClip(Size size) {
-    final path = Path();
-    path.lineTo(0, size.height * 0.8);
-    path.quadraticBezierTo(size.width / 2, size.height, size.width, size.height * 0.8);
-    path.lineTo(size.width, 0);
-    path.close();
-    return path;
+        const SizedBox(height: 16),
+        ...List.generate(4, (index) {
+          bool isSelected = _selectedCorrectIndex == index;
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6.0),
+            child: TextFormField(
+              controller: _optionControllers[index],
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: Colors.white,
+                hintText: 'Option ${String.fromCharCode(65 + index)}',
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                      isSelected
+                          ? Icons.check_circle
+                          : Icons.radio_button_unchecked,
+                      color: isSelected ? Colors.green : Colors.grey),
+                  onPressed: () => setState(() => _selectedCorrectIndex = index),
+                ),
+              ),
+              validator: (v) => (v == null || v.isEmpty) ? 'Option is required' : null,
+            ),
+          );
+        }),
+      ]),
+    );
   }
 
-  @override
-  bool shouldReclip(CustomClipper<Path> oldClipper) => false;
+  Widget _buildActionButtons() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        OutlinedButton(
+          onPressed: _saveAndContinue,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.black,
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            side: const BorderSide(color: Colors.black, width: 1.5),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+          ),
+          child: const Text('Save & Add Next',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        ),
+        const SizedBox(height: 16),
+        ElevatedButton(
+          onPressed: (_isSavingAndHosting || _questions.isEmpty)
+              ? null
+              : _saveQuizAndHost,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.black,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+          ),
+          child: _isSavingAndHosting
+              ? const SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(
+                      color: Colors.white, strokeWidth: 3))
+              : Text(
+                  'Finish & Host Quiz (${_questions.length}Q)',
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+        ),
+      ],
+    );
+  }
 }

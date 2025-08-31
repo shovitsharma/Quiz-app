@@ -1,60 +1,103 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+/// A custom exception to handle authentication-specific errors.
+class AuthException implements Exception {
+  final String message;
+  AuthException(this.message);
+
+  @override
+  String toString() => message;
+}
+
+/// Manages user authentication (signup, login, token storage).
+/// Implemented as a singleton to ensure a single instance.
 class AuthService {
-  static const String baseUrl = "http://34.235.122.140:4000/api";
+  // --- Singleton Setup ---
+  AuthService._privateConstructor();
+  static final AuthService instance = AuthService._privateConstructor();
 
-  // Store the token in memory
-  static String? _token;
+  // --- Properties ---
+  static const String _baseUrl = "http://34.235.122.140:4000/api";
+  final _storage = const FlutterSecureStorage();
+  static const _tokenKey = 'jwt_token'; // Key for storing the token securely
 
-  // Login method
-  static Future<Map<String, dynamic>> login(String email, String password) async {
-    final url = Uri.parse('$baseUrl/auth/login');
+  // --- Private Helper Methods ---
+
+  /// Handles decoding the response and checking for errors.
+  dynamic _handleResponse(http.Response response) {
+    final responseBody = jsonDecode(response.body);
+    // Success codes are 200 (OK) or 201 (Created)
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return responseBody;
+    } else {
+      // Throw a custom exception with the server's error message
+      throw AuthException(responseBody['message'] ?? 'An unknown error occurred.');
+    }
+  }
+
+  // --- Public API Methods ---
+
+  /// Logs in a user and securely stores the received token.
+  Future<Map<String, dynamic>> login(String email, String password) async {
+    final url = Uri.parse('$_baseUrl/auth/login');
     final response = await http.post(
       url,
       headers: {"Content-Type": "application/json"},
       body: jsonEncode({"email": email, "password": password}),
     );
 
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      _token = data['token']; // store token in memory
-      return data; // should contain token and user info
+    final data = _handleResponse(response);
+    final token = data['token'];
+
+    if (token != null) {
+      // Securely store the token on the device
+      await _storage.write(key: _tokenKey, value: token);
+      return data;
     } else {
-      return {
-        "success": false,
-        "message": jsonDecode(response.body)["message"] ?? "Login failed"
-      };
+      throw AuthException('Login successful, but no token was received.');
     }
   }
 
-  // Signup method
-  static Future<Map<String, dynamic>> signup(String name, String email, String password) async {
-  final url = Uri.parse('$baseUrl/auth/signup');
-  final response = await http.post(
-    url,
-    headers: {"Content-Type": "application/json"},
-    body: jsonEncode({"username": name, "email": email, "password": password}),
-  );
+  /// Signs up a new user.
+  Future<Map<String, dynamic>> signup(String name, String email, String password) async {
+    final url = Uri.parse('$_baseUrl/auth/signup');
+    final response = await http.post(
+      url,
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode({"username": name, "email": email, "password": password}),
+    );
+    // On success, the backend returns a success message.
+    return _handleResponse(response);
+  }
 
-  if (response.statusCode == 201) {
-    return {"success": true, "data": jsonDecode(response.body)};
-  } else {
+  /// Logs out the user by deleting their token.
+  Future<void> logout() async {
+    await _storage.delete(key: _tokenKey);
+  }
+
+  /// Retrieves the stored token. Returns null if no token is found.
+  Future<String?> getToken() async {
+    return await _storage.read(key: _tokenKey);
+  }
+
+  /// Checks if the user is currently logged in (i.e., has a token).
+  Future<bool> isLoggedIn() async {
+    final token = await getToken();
+    return token != null;
+  }
+
+  /// A crucial helper for other services (e.g., QuizService).
+  /// Returns the headers needed for authenticated API calls.
+  Future<Map<String, String>> getAuthHeaders() async {
+    final token = await getToken();
+    if (token == null) {
+      throw AuthException('Not authenticated. Please log in.');
+    }
     return {
-      "success": false,
-      "message": jsonDecode(response.body)["message"] ?? "Signup failed"
+      "Content-Type": "application/json",
+      "Authorization": "Bearer $token",
     };
-  }
-}
-
-
-  // Get token method
-  static String? getToken() {
-    return _token;
-  }
-
-  // Optional: logout
-  static void logout() {
-    _token = null;
   }
 }
