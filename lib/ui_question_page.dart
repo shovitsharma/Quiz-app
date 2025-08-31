@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:quiz_app/auth/live_quizservice.dart';
 import 'package:quiz_app/auth/quiz_service.dart';
 import 'package:quiz_app/quiz_created.dart';
 
@@ -172,7 +173,18 @@ class _QuizQuestionPageState extends State<QuizQuestionPage> {
     } else if (!_validateUniqueness()) {}
   }
 
-  Future<void> _handleSubmit() async {
+ int _labelToIndex(String label) {
+  switch (label) {
+    case 'A.': return 0;
+    case 'B.': return 1;
+    case 'C.': return 2;
+    case 'D.': return 3;
+    default: return -1;
+  }
+}
+
+ 
+ Future<void> _handleSubmitAndHost() async {
   if (!_areFieldsFilled || _correctAnswerLabel == null || !_validateUniqueness()) {
     _handleValidation();
     return;
@@ -180,6 +192,7 @@ class _QuizQuestionPageState extends State<QuizQuestionPage> {
 
   _saveOrUpdateCurrentQuestion();
 
+  // Pick date (optional, can remove if not needed)
   final DateTime? pickedDate = await showDatePicker(
     context: context,
     initialDate: DateTime.now(),
@@ -188,14 +201,14 @@ class _QuizQuestionPageState extends State<QuizQuestionPage> {
   );
   if (pickedDate == null) return;
 
+  // Pick time (optional)
   final TimeOfDay? pickedTime = await showTimePicker(
     context: context,
     initialTime: TimeOfDay.now(),
   );
   if (pickedTime == null) return;
 
-  if (!mounted) return;
-
+  // Quiz name dialog
   final quizName = await showDialog<String>(
     context: context,
     builder: (context) => AlertDialog(
@@ -221,13 +234,12 @@ class _QuizQuestionPageState extends State<QuizQuestionPage> {
   try {
     // 1️⃣ Create quiz
     final createResult = await QuizService.createQuiz(title: quizName);
-
     if (!createResult["success"]) {
       _showAlertDialog(createResult["message"]);
       return;
     }
 
-    final quizId = createResult["data"]["_id"];
+    final quizId = createResult["data"]["quiz"]["_id"];
 
     // 2️⃣ Add all questions
     for (final q in _questions) {
@@ -235,20 +247,29 @@ class _QuizQuestionPageState extends State<QuizQuestionPage> {
         quizId: quizId,
         questionText: q.questionText,
         options: q.options,
-        correctAnswer: q.options.indexOf(q.correctAnswerLabel),
+        correctAnswer: _labelToIndex(q.correctAnswerLabel),
       );
 
       if (!addResult["success"]) {
         _showAlertDialog("Failed to add question: ${addResult["message"]}");
-        return; // stop further processing
+        return;
       }
     }
 
-    // 3️⃣ Navigate to QuizCreatedScreen
+    // 3️⃣ Create a live session
+    final sessionResult = await LiveSessionService.createSession(quizId: quizId);
+    if (!sessionResult["success"]) {
+      _showAlertDialog(sessionResult["message"]);
+      return;
+    }
+
+    final sessionCode = sessionResult["data"]["code"]; // this is the code players will use
+
+    // 4️⃣ Navigate to QuizCreatedScreen with session code
     if (mounted) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (_) => QuizCreatedScreen(quizCode: quizId),
+          builder: (_) => QuizCreatedScreen(quizCode: sessionCode),
         ),
       );
     }
@@ -258,6 +279,7 @@ class _QuizQuestionPageState extends State<QuizQuestionPage> {
     setState(() => _isSubmitting = false);
   }
 }
+
 
 
 
@@ -347,7 +369,7 @@ class _QuizQuestionPageState extends State<QuizQuestionPage> {
                         ),
                         const SizedBox(height: 16),
                         ElevatedButton(
-                          onPressed: isFormComplete && !_isSubmitting ? _handleSubmit : null,
+                          onPressed: isFormComplete && !_isSubmitting ? _handleSubmitAndHost : null,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.blue.shade600,
                             foregroundColor: Colors.white,

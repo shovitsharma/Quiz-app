@@ -1,26 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:quiz_app/auth/socket_service.dart';
 
-class QuizQuestion {
-  String question;
-  List<String> options;
-  int correctIndex; // hidden from taker
-
-  QuizQuestion({
-    required this.question,
-    required this.options,
-    required this.correctIndex,
-  });
-
-  factory QuizQuestion.fromJson(Map<String, dynamic> json) {
-    return QuizQuestion(
-      question: json["question"],
-      options: List<String>.from(json["options"]),
-      correctIndex: json["correctIndex"],
-    );
-  }
-}
-
 class TakeQuizScreen extends StatefulWidget {
   final String quizId;
   final String nickname;
@@ -39,6 +19,8 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
   Map<int, int> _selectedAnswers = {};
   Map<String, dynamic>? _currentQuestion;
   bool _isLoading = true;
+  String? _playerId;
+  List<Map<String, dynamic>> _leaderboard = [];
 
   @override
   void initState() {
@@ -54,17 +36,25 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
 
   void _connectSocket() {
     final socket = LiveSocketService();
-    socket.connect("http://34.235.122.140:4000");
+    socket.connect("http://34.235.122.140:4000"); // Service handles /live namespace
 
     // Player joins the session
     socket.joinAsPlayer(
       code: widget.quizId,
       name: widget.nickname,
       callback: (resp) {
-        if (resp["success"] != true) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(resp["message"] ?? "Failed to join")),
-          );
+        if (resp["success"] == true) {
+          setState(() {
+            _playerId = resp["playerId"];
+            _isLoading = false;
+          });
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(resp["message"] ?? "Failed to join")),
+            );
+            Navigator.pop(context);
+          }
         }
       },
     );
@@ -78,9 +68,18 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
       });
     });
 
-    // Session ended, show score
+    // Listen for leaderboard updates
+    socket.onLeaderboardUpdate((leaderboard) {
+      if (!mounted) return;
+      setState(() {
+        _leaderboard = leaderboard;
+      });
+    });
+
+    // Session ended, show final results
     socket.onSessionEnded((data) {
-      _showScore();
+      if (!mounted) return;
+      _showFinalResults(data);
     });
   }
 
@@ -88,26 +87,100 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
     if (_currentQuestion == null) return;
 
     final questionIndex = _currentQuestion!["index"];
-    _selectedAnswers[questionIndex] = index;
+    
+    // Only allow one answer per question
+    if (_selectedAnswers.containsKey(questionIndex)) {
+      return;
+    }
+    
+    setState(() {
+      _selectedAnswers[questionIndex] = index;
+    });
 
+    // Submit answer via socket (backend uses socket.id as playerId)
     LiveSocketService().submitAnswer(
       questionIndex: questionIndex,
       answerIndex: index,
-      callback: (_) {},
+      callback: (response) {
+        if (response["success"] == true) {
+          // Show visual feedback for correct/incorrect answer
+          _showAnswerFeedback(response["correct"] ?? false);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(response["message"] ?? "Failed to submit answer"),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      },
     );
   }
 
-  void _showScore() {
-    int score = 0;
-    _selectedAnswers.forEach((index, answer) {
-      if (_currentQuestion?["correctIndex"] == answer) score++;
-    });
+  void _showAnswerFeedback(bool isCorrect) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(isCorrect ? "Correct!" : "Incorrect"),
+        backgroundColor: isCorrect ? Colors.green : Colors.red,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _showFinalResults(Map<String, dynamic> data) {
+    // Calculate user's final position in leaderboard
+    int userPosition = 0;
+    int userScore = 0;
+    
+    for (int i = 0; i < _leaderboard.length; i++) {
+      if (_leaderboard[i]['name'] == widget.nickname) {
+        userPosition = i + 1;
+        userScore = _leaderboard[i]['score'] ?? 0;
+        break;
+      }
+    }
 
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (_) => AlertDialog(
-        title: const Text('Quiz Completed'),
-        content: Text('Your score: $score'),
+        title: const Text('Quiz Completed!'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Your Score: $userScore'),
+            Text('Your Position: ${userPosition > 0 ? "#$userPosition" : "Not ranked"}'),
+            const SizedBox(height: 16),
+            const Text('Final Leaderboard:', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Container(
+              height: 150,
+              width: double.maxFinite,
+              child: ListView.builder(
+                itemCount: _leaderboard.length,
+                itemBuilder: (context, index) {
+                  final player = _leaderboard[index];
+                  final isCurrentUser = player['name'] == widget.nickname;
+                  return Container(
+                    padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                    decoration: isCurrentUser ? BoxDecoration(
+                      color: Colors.blue.shade100,
+                      borderRadius: BorderRadius.circular(4),
+                    ) : null,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('${index + 1}. ${player['name'] ?? 'Unknown'}'),
+                        Text('${player['score'] ?? 0} pts'),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst),
@@ -122,7 +195,16 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
   Widget build(BuildContext context) {
     if (_isLoading || _currentQuestion == null) {
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Loading quiz...'),
+            ],
+          ),
+        ),
       );
     }
 
@@ -130,6 +212,7 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
     final options = List<String>.from(_currentQuestion!["options"]);
     final questionIndex = _currentQuestion!["index"];
     final selectedIndex = _selectedAnswers[questionIndex];
+    final hasAnswered = _selectedAnswers.containsKey(questionIndex);
 
     return Scaffold(
       backgroundColor: Colors.grey[100],
@@ -188,23 +271,22 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
                               ),
                               Expanded(
                                 child: GestureDetector(
-                                  onTap: () => setState(() {
-                                    _submitAnswer(index);
-                                  }),
+                                  onTap: hasAnswered ? null : () => _submitAnswer(index),
                                   child: Padding(
                                     padding:
                                         const EdgeInsets.symmetric(vertical: 16),
                                     child: Text(
                                       options[index],
-                                      style: const TextStyle(fontSize: 16),
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        color: hasAnswered ? Colors.grey : Colors.black,
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
                               GestureDetector(
-                                onTap: () => setState(() {
-                                  _submitAnswer(index);
-                                }),
+                                onTap: hasAnswered ? null : () => _submitAnswer(index),
                                 child: Padding(
                                   padding: const EdgeInsets.all(16.0),
                                   child: Icon(
@@ -213,7 +295,7 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
                                         : Icons.radio_button_unchecked,
                                     color: isSelected
                                         ? Colors.blue
-                                        : Colors.grey.shade400,
+                                        : (hasAnswered ? Colors.grey.shade300 : Colors.grey.shade400),
                                   ),
                                 ),
                               ),
@@ -224,6 +306,23 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
                     }),
                   ),
                   const Spacer(),
+                  if (hasAnswered)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade100,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        'Answer submitted! Waiting for next question...',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.green,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 16),
                 ],
               ),
             ),
@@ -247,9 +346,12 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
               offset: const Offset(0, 5))
         ],
       ),
-      child: Text(
-        questionText,
-        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+      child: Center(
+        child: Text(
+          questionText,
+          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          textAlign: TextAlign.center,
+        ),
       ),
     );
   }

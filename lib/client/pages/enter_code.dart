@@ -1,6 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:quiz_app/auth/socket_service.dart';
+import 'package:quiz_app/auth/live_quizservice.dart';
 import 'package:quiz_app/client/pages/loading_quiz.dart';
 import 'package:quiz_app/login.dart';
 
@@ -57,6 +57,7 @@ class EnterQuizCodeScreen extends StatelessWidget {
                   contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
                   ),
                 ),
               ),
@@ -73,24 +74,72 @@ class EnterQuizCodeScreen extends StatelessWidget {
                   contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
                   ),
                 ),
+                textCapitalization: TextCapitalization.characters,
               ),
 
               const SizedBox(height: 20),
 
-              Divider(thickness: 0.3,color: Colors.black,),
+              const Divider(thickness: 0.3, color: Colors.black),
 
               const SizedBox(height: 10),
 
               ElevatedButton(
-  onPressed: () async {
-    final playerName = _nameController.text.trim();
-    final quizCode = _codeController.text.trim();
+                onPressed: () => _joinQuiz(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.black,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(200, 50),
+                  maximumSize: const Size(200, 70),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                  elevation: 4,
+                  shadowColor: Colors.black.withOpacity(0.3),
+                ),
+                child: const Text(
+                  'ENTER',
+                  style: TextStyle(fontSize: 17),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
+  void _joinQuiz(BuildContext context) async {
+    final playerName = _nameController.text.trim();
+    final quizCode = _codeController.text.trim().toUpperCase();
+
+    // Input validation
     if (playerName.isEmpty || quizCode.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please enter both name and quiz code")),
+        const SnackBar(
+          content: Text("Please enter both name and quiz code"),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (playerName.length < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Name must be at least 2 characters"),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (playerName.length > 20) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Name cannot exceed 20 characters"),
+          backgroundColor: Colors.red,
+        ),
       );
       return;
     }
@@ -99,67 +148,71 @@ class EnterQuizCodeScreen extends StatelessWidget {
     final random = Random();
     final randomPic = _profilePictures[random.nextInt(_profilePictures.length)];
 
-    // Show loading while connecting
+    // Show loading dialog
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
-
-    try {
-      final socketService = LiveSocketService();
-      socketService.connect("http://34.235.122.140:4000");
-
-      // Attempt to join as player
-      socketService.joinAsPlayer(
-        code: quizCode,
-        name: playerName,
-        callback: (response) {
-          Navigator.of(context).pop(); // remove loading
-
-          if (response["success"] == true) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => WaitingRoomScreen(
-                  playerName: playerName,
-                  profilePic: randomPic,
-                  quizCode: quizCode,
-                ),
-              ),
-            );
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(response["message"] ?? "Failed to join session")),
-            );
-          }
-        },
-      );
-    } catch (e) {
-      Navigator.of(context).pop(); // remove loading
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error connecting: $e")),
-      );
-    }
-  },
-  style: ElevatedButton.styleFrom(
-    backgroundColor: Colors.black,
-    foregroundColor: Colors.white,
-    maximumSize: const Size(200, 70),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-    elevation: 4,
-    shadowColor: Colors.black.withOpacity(0.3),
-  ),
-  child: const Text(
-    'ENTER',
-    style: TextStyle(fontSize: 17),
-  ),
-)
-
-            ],
-          ),
+      builder: (_) => const AlertDialog(
+        content: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 20),
+            Text("Joining session..."),
+          ],
         ),
       ),
     );
+
+    try {
+      // First, verify session exists and join via HTTP API
+      final joinResult = await LiveSessionService.joinSession(
+        code: quizCode,
+        playerName: playerName,
+      );
+
+      // Remove loading dialog
+      if (context.mounted) {
+        Navigator.of(context).pop();
+      }
+
+      if (!joinResult['success']) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(joinResult['message'] ?? "Failed to join session"),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Success - navigate to waiting room
+      if (context.mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => WaitingRoomScreen(
+              playerName: playerName,
+              profilePic: randomPic,
+              quizCode: quizCode,
+            ),
+          ),
+        );
+      }
+
+    } catch (e) {
+      // Remove loading dialog if still showing
+      if (context.mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Connection error: $e"),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }

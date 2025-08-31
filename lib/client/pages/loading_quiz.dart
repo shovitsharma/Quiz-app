@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:quiz_app/auth/socket_service.dart';
 import 'package:quiz_app/client/pages/take_Quiz.dart';
-import 'package:quiz_app/login.dart'; 
 
 class WaitingRoomScreen extends StatefulWidget {
   final String playerName;
@@ -20,6 +19,8 @@ class WaitingRoomScreen extends StatefulWidget {
 }
 
 class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
+  String? _playerId;
+
   @override
   void initState() {
     super.initState();
@@ -34,7 +35,7 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
 
   void _connectSocket() {
     final socketService = LiveSocketService();
-    socketService.connect("http://34.235.122.140:4000");
+    socketService.connect("http://34.235.122.140:4000"); // Fixed: Service handles /live namespace
 
     // Join session as player
     socketService.joinAsPlayer(
@@ -43,16 +44,20 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
       callback: (response) {
         if (response["success"] != true) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(response["message"] ?? "Failed to join session")),
+            SnackBar(
+                content:
+                    Text(response["message"] ?? "Failed to join session")),
           );
+        } else {
+          // Save playerId for submitting answers later
+          _playerId = response["playerId"];
         }
       },
     );
 
     // Listen for host starting the quiz
     socketService.onQuestionShow((questionData) {
-      // Navigate to TakeQuizScreen immediately
-      if (!mounted) return;
+      if (!mounted || _playerId == null) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -67,15 +72,16 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
     // Optional: listen for lobby updates (player list)
     socketService.onLobbyUpdate((players) {
       setState(() {
-        // You can display player list dynamically if needed
+        // Can display dynamic player list if needed
       });
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    return QuizPageTemplate(
-      child: Center(
+    return Scaffold(
+      backgroundColor: Colors.grey[100],
+      body: Center(
         child: Container(
           padding: const EdgeInsets.all(24),
           margin: const EdgeInsets.symmetric(horizontal: 20),
@@ -99,22 +105,19 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
                 style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 30),
-
               CircleAvatar(
                 radius: 40,
                 backgroundImage: NetworkImage(widget.profilePic),
               ),
               const SizedBox(height: 15),
-
               Text(
                 widget.playerName,
-                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                    fontSize: 22, fontWeight: FontWeight.w600),
               ),
-
               const SizedBox(height: 20),
-              Divider(thickness: 0.3, color: Colors.black),
+              const Divider(thickness: 0.3, color: Colors.black),
               const SizedBox(height: 20),
-
               Text(
                 "Quiz Code: ${widget.quizCode}",
                 style: const TextStyle(
@@ -123,7 +126,6 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
                   color: Colors.grey,
                 ),
               ),
-
               const SizedBox(height: 30),
               const CircularProgressIndicator(color: Colors.black),
               const SizedBox(height: 16),
