@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:quiz_app/login.dart'; // Assuming QuizPageTemplate is here
+import 'package:quiz_app/login.dart'; 
 
 class HostQuestionScreen extends StatelessWidget {
   const HostQuestionScreen({super.key});
@@ -51,7 +51,7 @@ class HostQuestionScreen extends StatelessWidget {
               const SizedBox(height: 32),
               ElevatedButton(
                 onPressed: () {
-                  // Navigate back to the previous screen or home screen
+                  // Navigate back to the previous screen (e.g., your home screen)
                   Navigator.of(context).pop();
                 },
                 style: ElevatedButton.styleFrom(

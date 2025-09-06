@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:quiz_app/after_startquiz.dart';
 import 'package:quiz_app/auth/live_models.dart';
 import 'package:quiz_app/auth/socket_service.dart';
-import 'package:quiz_app/host_afterstart.dart';
 
 class HostLobbyScreen extends StatefulWidget {
   final String sessionId;
@@ -87,7 +87,7 @@ Future<void> _connectAndJoin() async {
     if (mounted) _showErrorDialog(e.message);
   } finally {
     // Clean up the subscription in case of an error
-    connectionSub?.cancel();
+    connectionSub.cancel();
   }
 }
 
