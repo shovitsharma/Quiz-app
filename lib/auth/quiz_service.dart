@@ -18,7 +18,7 @@ class QuizService {
   static final QuizService instance = QuizService._privateConstructor();
 
   // --- Properties ---
-  static const String _baseUrl = "https://team-01-u90d.onrender.com ";
+  static const String _baseUrl = "https://team-01-u90d.onrender.com/api";
   final AuthService _authService = AuthService.instance; // Dependency for auth
 
   // --- Private Helper ---

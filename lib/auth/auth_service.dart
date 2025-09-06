@@ -24,7 +24,7 @@ class AuthService {
 
   // --- Properties ---
   // CRITICAL FIX: Removed trailing space from the URL
-  static const String _baseUrl = "https://team-01-u90d.onrender.com";
+  static const String _baseUrl = "https://team-01-u90d.onrender.com/api";
   final _storage = const FlutterSecureStorage();
   static const _tokenKey = 'jwt_token';
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:quiz_app/auth/socket_service.dart';
+import 'package:quiz_app/client/pages/loading_quiz.dart';
 import 'package:quiz_app/login.dart';  
 
 class EnterQuizCodeScreen extends StatefulWidget {
@@ -45,21 +46,24 @@ class _EnterQuizCodeScreenState extends State<EnterQuizCodeScreen> {
         name: playerName,
       );
 
-      if (mounted) {
-        // TODO: Replace this with navigation to the PlayerLobbyScreen
-        _showSuccessDialog(playerName, quizCode);
-        /*
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (_) => PlayerLobbyScreen(
-              sessionId: response['sessionId'],
-              playerId: response['playerId'],
-              playerName: playerName,
-            ),
-          ),
-        );
-        */
-      }
+      // In EnterQuizCodeScreen.dart -> _handleJoinQuiz()
+
+if (mounted) {
+  // 1. REMOVE or COMMENT OUT the dialog call:
+  // _showSuccessDialog(playerName, quizCode);
+
+  // 2. UNCOMMENT the navigation logic:
+  Navigator.of(context).pushReplacement(
+    MaterialPageRoute(
+      builder: (_) => PlayerLobbyScreen(
+        sessionId: response['sessionId'],
+        playerId: response['playerId'],
+        playerName: playerName,
+        quizCode: quizCode, // Make sure to pass the code!
+      ),
+    ),
+  );
+}
     } on SocketException catch (e) {
       if (mounted) {
         _showErrorDialog(e.message);
@@ -78,17 +82,6 @@ class _EnterQuizCodeScreenState extends State<EnterQuizCodeScreen> {
       builder: (_) => AlertDialog(
         title: const Text('Failed to Join'),
         content: Text(message),
-        actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK'))],
-      ),
-    );
-  }
-
-  void _showSuccessDialog(String name, String code) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Joined Successfully!'),
-        content: Text('Welcome, $name! You have joined quiz $code. Waiting for the host to start.'),
         actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK'))],
       ),
     );

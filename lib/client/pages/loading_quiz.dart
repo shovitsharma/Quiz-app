@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:quiz_app/auth/live_models.dart';
 import 'package:quiz_app/auth/socket_service.dart';
 import 'package:quiz_app/client/pages/take_quiz.dart';
+// ✨ ADD THIS IMPORT for the page template
+import 'package:quiz_app/login.dart'; // Assuming QuizPageTemplate is in login.dart
 
 class PlayerLobbyScreen extends StatefulWidget {
   final String sessionId;
@@ -23,51 +25,41 @@ class PlayerLobbyScreen extends StatefulWidget {
 }
 
 class _PlayerLobbyScreenState extends State<PlayerLobbyScreen> {
-  // --- STATE ---
+  // --- STATE (No changes here) ---
   final _socketService = LiveSocketService.instance;
   StreamSubscription? _lobbySubscription;
   StreamSubscription? _questionSubscription;
   List<LobbyPlayer> _players = [];
 
+  // --- initState, dispose, _subscribeToEvents (No changes here) ---
   @override
   void initState() {
     super.initState();
-    // This screen's job is to LISTEN to events for the session we just joined.
     _subscribeToEvents();
   }
 
   @override
   void dispose() {
-    // Clean up subscriptions to prevent memory leaks.
     _lobbySubscription?.cancel();
     _questionSubscription?.cancel();
-    // We DO NOT disconnect here, as the connection is needed for the quiz screen.
     super.dispose();
   }
 
-  // --- LOGIC ---
-
-  // In player_lobby_screen.dart
-
-  /// Subscribes to the streams from the LiveSocketService.
   void _subscribeToEvents() {
-    // Listen for updates to the player list.
     _lobbySubscription = _socketService.lobbyUpdates.listen((players) {
       setState(() {
         _players = players;
       });
     });
 
-    // Listen for the 'question:show' event, which signals the start of the quiz.
     _questionSubscription = _socketService.questions.listen((question) {
       if (mounted) {
-        // When the first question arrives, navigate to the quiz screen.
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
             builder: (_) => TakeQuizScreen(
               sessionId: widget.sessionId,
               playerId: widget.playerId,
-              playerName: widget.playerName, // ✨ ADD THIS LINE
+              playerName: widget.playerName,
               initialQuestion: question,
             ),
           ),
@@ -76,13 +68,13 @@ class _PlayerLobbyScreenState extends State<PlayerLobbyScreen> {
     });
   }
 
-  // --- UI BUILD ---
+  // --- UI BUILD (CHANGES ARE HERE) ---
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey[100],
-      body: Center(
+    // ✨ CHANGED HERE: Replaced Scaffold with QuizPageTemplate
+    return QuizPageTemplate(
+      child: Center(
         child: Container(
           padding: const EdgeInsets.all(24),
           margin: const EdgeInsets.symmetric(horizontal: 20),
@@ -114,7 +106,8 @@ class _PlayerLobbyScreenState extends State<PlayerLobbyScreen> {
               const SizedBox(height: 24),
               const CircularProgressIndicator(color: Colors.black),
               const SizedBox(height: 16),
-              const Text("Waiting for the host to start...", style: TextStyle(fontSize: 16)),
+              const Text("Waiting for the host to start...",
+                  style: TextStyle(fontSize: 16)),
             ],
           ),
         ),
@@ -122,12 +115,10 @@ class _PlayerLobbyScreenState extends State<PlayerLobbyScreen> {
     );
   }
 
-  // --- WIDGET BUILDER ---
-
-  /// A live-updating list of players in the lobby.
+  // --- _buildPlayerList (No changes here) ---
   Widget _buildPlayerList() {
     return Container(
-      height: 200, // Give the list a fixed height within the card
+      height: 200,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.grey.shade300),
