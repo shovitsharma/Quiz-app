@@ -18,7 +18,7 @@ class LiveSessionService {
   static final LiveSessionService instance = LiveSessionService._privateConstructor();
 
   // --- Properties ---
-  static const String _baseUrl = "http://34.235.122.140:4000/api";
+  static const String _baseUrl = "https://team-01-u90d.onrender.com/api";
   final AuthService _authService = AuthService.instance; // Dependency for auth
 
   // --- Private Helper ---

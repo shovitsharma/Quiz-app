@@ -51,18 +51,44 @@ class _HostLobbyScreenState extends State<HostLobbyScreen> {
   // --- LOGIC ---
 
   /// Connects to the socket server and joins the session as the host.
-  Future<void> _connectAndJoin() async {
-    try {
-      _socketService.connect();
-      // Authenticate this client as the host of the session
-      await _socketService.joinAsHost(
-        sessionId: widget.sessionId,
-        hostKey: widget.hostKey,
-      );
-    } on SocketException catch (e) {
-      if (mounted) _showErrorDialog(e.message);
+  // A more resilient way to connect and join
+
+Future<void> _connectAndJoin() async {
+  final socketService = LiveSocketService.instance;
+  
+  // Create a completer to wait for the connection
+  final connectionCompleter = Completer<void>();
+
+  StreamSubscription? connectionSub;
+  connectionSub = socketService.connectionStatus.listen((isConnected) {
+    if (isConnected && !connectionCompleter.isCompleted) {
+      // Once connected, complete the future and cancel this subscription
+      connectionCompleter.complete();
+      connectionSub?.cancel();
     }
+  });
+
+  // Start the connection process
+  socketService.connect();
+
+  try {
+    // Wait for the connection to be established (with a timeout)
+    await connectionCompleter.future.timeout(const Duration(seconds: 10));
+
+    // Now that we're definitely connected, join as the host
+    await socketService.joinAsHost(
+      sessionId: widget.sessionId,
+      hostKey: widget.hostKey,
+    );
+  } on TimeoutException {
+     if (mounted) _showErrorDialog("Could not connect to the server in time. Please try again.");
+  } on SocketException catch (e) {
+    if (mounted) _showErrorDialog(e.message);
+  } finally {
+    // Clean up the subscription in case of an error
+    connectionSub?.cancel();
   }
+}
 
   /// Sends the command to the server to start the quiz for all players.
   Future<void> _handleStartQuiz() async {

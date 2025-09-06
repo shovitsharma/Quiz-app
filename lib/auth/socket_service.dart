@@ -20,7 +20,7 @@ class LiveSocketService {
 
   // --- Private Properties ---
   IO.Socket? _socket;
-  static const String _serverUrl = "https://team-01-u90d.onrender.com ";
+  static const String _serverUrl = "https://team-01-u90d.onrender.com";
 
   // --- Stream Controllers ---
   // These will broadcast events to any listening widgets in your app.
