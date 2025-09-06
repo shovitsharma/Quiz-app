@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -15,25 +16,50 @@ class AuthException implements Exception {
 /// Implemented as a singleton to ensure a single instance.
 class AuthService {
   // --- Singleton Setup ---
-  AuthService._privateConstructor();
+  AuthService._privateConstructor() {
+    // Check initial login status when the service is created
+    _checkInitialAuthStatus();
+  }
   static final AuthService instance = AuthService._privateConstructor();
 
   // --- Properties ---
-  static const String _baseUrl = "http://34.235.122.140:4000/api";
+  // CRITICAL FIX: Removed trailing space from the URL
+  static const String _baseUrl = "https://team-01-u90d.onrender.com";
   final _storage = const FlutterSecureStorage();
-  static const _tokenKey = 'jwt_token'; // Key for storing the token securely
+  static const _tokenKey = 'jwt_token';
+
+  // --- State Management ---
+  // A stream to notify the app about authentication status changes.
+  final StreamController<bool> _authStatusController = StreamController<bool>.broadcast();
+  Stream<bool> get authStatusStream => _authStatusController.stream;
 
   // --- Private Helper Methods ---
 
-  /// Handles decoding the response and checking for errors.
+  /// Checks the initial authentication status when the app starts.
+  void _checkInitialAuthStatus() async {
+    final token = await getToken();
+    _authStatusController.add(token != null);
+  }
+
+  /// Handles decoding the response and checking for errors robustly.
   dynamic _handleResponse(http.Response response) {
-    final responseBody = jsonDecode(response.body);
-    // Success codes are 200 (OK) or 201 (Created)
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      return responseBody;
+      try {
+        // Return null for empty successful responses (e.g., 204 No Content)
+        if (response.body.isEmpty) return null;
+        return jsonDecode(response.body);
+      } catch (e) {
+        throw AuthException('Failed to parse successful server response.');
+      }
     } else {
-      // Throw a custom exception with the server's error message
-      throw AuthException(responseBody['message'] ?? 'An unknown error occurred.');
+      try {
+        final errorBody = jsonDecode(response.body);
+        final errorMessage = errorBody['message'] ?? 'An unknown error occurred';
+        throw AuthException(errorMessage);
+      } catch (e) {
+        // Fallback for non-JSON error responses
+        throw AuthException('Server error: ${response.statusCode}');
+      }
     }
   }
 
@@ -42,39 +68,47 @@ class AuthService {
   /// Logs in a user and securely stores the received token.
   Future<Map<String, dynamic>> login(String email, String password) async {
     final url = Uri.parse('$_baseUrl/auth/login');
-    final response = await http.post(
-      url,
-      headers: {"Content-Type": "application/json"},
-      body: jsonEncode({"email": email, "password": password}),
-    );
+    try {
+      final response = await http.post(
+        url,
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"email": email, "password": password}),
+      ).timeout(const Duration(seconds: 15)); // Added timeout
 
-    final data = _handleResponse(response);
-    final token = data['token'];
+      final data = _handleResponse(response);
+      final token = data['token'];
 
-    if (token != null) {
-      // Securely store the token on the device
-      await _storage.write(key: _tokenKey, value: token);
-      return data;
-    } else {
-      throw AuthException('Login successful, but no token was received.');
+      if (token != null) {
+        await _storage.write(key: _tokenKey, value: token);
+        _authStatusController.add(true); // Notify listeners: Logged In
+        return data;
+      } else {
+        throw AuthException('Login successful, but no token was received.');
+      }
+    } on TimeoutException {
+      throw AuthException('The request timed out. Please try again.');
     }
   }
 
   /// Signs up a new user.
   Future<Map<String, dynamic>> signup(String name, String email, String password) async {
     final url = Uri.parse('$_baseUrl/auth/signup');
-    final response = await http.post(
-      url,
-      headers: {"Content-Type": "application/json"},
-      body: jsonEncode({"username": name, "email": email, "password": password}),
-    );
-    // On success, the backend returns a success message.
-    return _handleResponse(response);
+    try {
+       final response = await http.post(
+        url,
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"username": name, "email": email, "password": password}),
+      ).timeout(const Duration(seconds: 15)); // Added timeout
+      return _handleResponse(response);
+    } on TimeoutException {
+       throw AuthException('The request timed out. Please try again.');
+    }
   }
 
   /// Logs out the user by deleting their token.
   Future<void> logout() async {
     await _storage.delete(key: _tokenKey);
+    _authStatusController.add(false); // Notify listeners: Logged Out
   }
 
   /// Retrieves the stored token. Returns null if no token is found.
@@ -88,7 +122,6 @@ class AuthService {
     return token != null;
   }
 
-  /// A crucial helper for other services (e.g., QuizService).
   /// Returns the headers needed for authenticated API calls.
   Future<Map<String, String>> getAuthHeaders() async {
     final token = await getToken();
@@ -99,5 +132,10 @@ class AuthService {
       "Content-Type": "application/json",
       "Authorization": "Bearer $token",
     };
+  }
+
+  /// Closes the stream controller when the app is disposed.
+  void dispose() {
+    _authStatusController.close();
   }
 }
