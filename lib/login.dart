@@ -1,59 +1,171 @@
 import 'package:flutter/material.dart';
+import 'package:quiz_app/auth/auth_service.dart'; // Make sure this path is correct
 import 'package:quiz_app/signup.dart';
-import 'package:quiz_app/welcome_page.dart';
+import 'package:quiz_app/ui_question_page.dart';
 
-// Note: Make sure the 'QuizPageTemplate' widget is accessible from this file.
-// If it's in another file, you will need to import it.
-
-class LoginPage extends StatelessWidget {
+class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    // Reusing the same template for a consistent background
-    return QuizPageTemplate(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text(
-            'Login',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 40,
-              fontWeight: FontWeight.w900,
-              color: Colors.black,
-            ),
+  State<LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
+  // --- STATE AND CONTROLLERS ---
+  final _formKey = GlobalKey<FormState>();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _isLoading = false;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  // --- LOGIC ---
+
+  /// Handles the entire login process, including validation, API call, and error handling.
+  Future<void> _handleLogin() async {
+    // 1. Validate the form fields
+    if (!_formKey.currentState!.validate()) {
+      return; // If validation fails, do nothing.
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      // 2. Call the AuthService using the singleton instance
+      await AuthService.instance.login(
+        _emailController.text.trim(),
+        _passwordController.text.trim(),
+      );
+
+      // 3. Navigate to the welcome page on success
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const QuizCreationPage()),
+      );
+      }
+    } on AuthException catch (e) {
+      // 4. Show a user-friendly error dialog on failure
+      if (mounted) {
+        _showErrorDialog(e.message);
+      }
+    } finally {
+      // 5. Always turn off the loading indicator
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  /// Shows a simple alert dialog for displaying errors.
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Login Failed'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
           ),
-          const SizedBox(height: 40),
-          _buildTextField(label: 'Email', hint: 'Enter your email address'),
-          const SizedBox(height: 20),
-          _buildTextField(label: 'Password', hint: 'Enter password', isObscure: true),
-          const SizedBox(height: 40),
-          _buildLoginButton(context),
-          const SizedBox(height: 20),
-          _buildSignUpPrompt(context),
         ],
       ),
     );
   }
 
-  /// A reusable widget for creating a labeled text field.
-  Widget _buildTextField({required String label, required String hint, bool isObscure = false}) {
+  // --- UI BUILD ---
+
+  @override
+  Widget build(BuildContext context) {
+    return QuizPageTemplate(
+      child: Form( // Wrap the column with a Form widget
+        key: _formKey,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Login',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 40, fontWeight: FontWeight.w900, color: Colors.black),
+            ),
+            const SizedBox(height: 40),
+            _buildEmailField(),
+            const SizedBox(height: 20),
+            _buildPasswordField(),
+            const SizedBox(height: 40),
+            _buildLoginButton(),
+            const SizedBox(height: 20),
+            _buildSignUpPrompt(context),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --- UI HELPER WIDGETS (with validation) ---
+
+  Widget _buildEmailField() {
+    return _buildTextFormField(
+      label: 'Email',
+      hint: 'Enter your email',
+      controller: _emailController,
+      keyboardType: TextInputType.emailAddress,
+      validator: (value) {
+        if (value == null || value.isEmpty) {
+          return 'Please enter your email';
+        }
+        // Simple regex for email validation
+        if (!RegExp(r'\S+@\S+\.\S+').hasMatch(value)) {
+          return 'Please enter a valid email address';
+        }
+        return null;
+      },
+    );
+  }
+
+  Widget _buildPasswordField() {
+    return _buildTextFormField(
+      label: 'Password',
+      hint: 'Enter password',
+      controller: _passwordController,
+      isObscure: true,
+      validator: (value) {
+        if (value == null || value.isEmpty) {
+          return 'Please enter your password';
+        }
+        return null;
+      },
+    );
+  }
+
+  /// A reusable widget for creating a labeled TextFormField.
+  Widget _buildTextFormField({
+    required String label,
+    required String hint,
+    required TextEditingController controller,
+    bool isObscure = false,
+    String? Function(String?)? validator,
+    TextInputType? keyboardType,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: Colors.grey[700],
-          ),
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey[700]),
         ),
         const SizedBox(height: 8),
-        TextField(
+        TextFormField( // Changed from TextField to TextFormField
+          controller: controller,
           obscureText: isObscure,
+          keyboardType: keyboardType,
+          validator: validator,
           decoration: InputDecoration(
             hintText: hint,
             filled: true,
@@ -65,7 +177,15 @@ class LoginPage extends StatelessWidget {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.black, width: 2.0),
+              borderSide: const BorderSide(color: Colors.black, width: 2.0),
+            ),
+            errorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Colors.red, width: 1.5),
+            ),
+            focusedErrorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Colors.red, width: 2.0),
             ),
           ),
         ),
@@ -73,14 +193,10 @@ class LoginPage extends StatelessWidget {
     );
   }
 
-  /// Builds the main "Login" button.
-  Widget _buildLoginButton(BuildContext context) {
+  /// Builds the main "Login" button with loading state.
+  Widget _buildLoginButton() {
     return ElevatedButton(
-      onPressed: () {
-        Navigator.of(context).push(
-        MaterialPageRoute(builder: (context) => const WelcomePage()),
-        );
-      },
+      onPressed: _isLoading ? null : _handleLogin, // Disable button when loading
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
@@ -88,10 +204,14 @@ class LoginPage extends StatelessWidget {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
         elevation: 5,
       ),
-      child: const Text(
-        'Login',
-        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-      ),
+      child: _isLoading
+          ? const CircularProgressIndicator( // Show loading indicator
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+            )
+          : const Text(
+              'Login',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
     );
   }
 
@@ -99,25 +219,19 @@ class LoginPage extends StatelessWidget {
   Widget _buildSignUpPrompt(BuildContext context) {
     return GestureDetector(
       onTap: () {
-         Navigator.of(context).push(
-        MaterialPageRoute(builder: (context) => const SignUpPage()),
-      );
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (context) => const SignUpPage()),
+        );
       },
       child: RichText(
         textAlign: TextAlign.center,
         text: TextSpan(
-          style: TextStyle(
-            fontSize: 15,
-            color: Colors.grey[600],
-          ),
+          style: TextStyle(fontSize: 15, color: Colors.grey[600]),
           children: const [
             TextSpan(text: "Don't have an account? "),
             TextSpan(
               text: 'Sign Up',
-              style: TextStyle(
-                color: Colors.black, // Changed to black to match image
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
             ),
           ],
         ),
@@ -127,9 +241,7 @@ class LoginPage extends StatelessWidget {
 }
 
 
-// --- This is the TEMPLATE WIDGET from the previous step ---
-// You would typically have this in its own file and import it.
-
+// --- TEMPLATE WIDGET (Keep this in its own file and import it) ---
 class QuizPageTemplate extends StatelessWidget {
   final Widget child;
   const QuizPageTemplate({super.key, required this.child});
@@ -154,6 +266,7 @@ class QuizPageTemplate extends StatelessWidget {
   }
 
   Widget _buildBackgroundCircles() {
+    // ... (This part remains unchanged)
     return Stack(
       children: [
         Positioned(

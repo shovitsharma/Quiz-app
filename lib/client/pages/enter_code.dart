@@ -1,21 +1,99 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:quiz_app/login.dart';
+import 'package:quiz_app/auth/socket_service.dart';
+import 'package:quiz_app/login.dart';  
 
-class EnterQuizCodeScreen extends StatelessWidget {
-  final TextEditingController _codeController = TextEditingController();
-  final TextEditingController _nameController = TextEditingController();
+class EnterQuizCodeScreen extends StatefulWidget {
+  const EnterQuizCodeScreen({super.key});
 
-  // Example list of profile pictures (you can replace with your asset images)
-  final List<String> _profilePictures = [
-    "https://i.pravatar.cc/150?img=1",
-    "https://i.pravatar.cc/150?img=2",
-    "https://i.pravatar.cc/150?img=3",
-    "https://i.pravatar.cc/150?img=4",
-    "https://i.pravatar.cc/150?img=5",
-  ];
+  @override
+  State<EnterQuizCodeScreen> createState() => _EnterQuizCodeScreenState();
+}
 
-  EnterQuizCodeScreen({super.key});
+class _EnterQuizCodeScreenState extends State<EnterQuizCodeScreen> {
+  // --- STATE ---
+  final _formKey = GlobalKey<FormState>();
+  final _codeController = TextEditingController();
+  final _nameController = TextEditingController();
+  bool _isLoading = false;
+
+  @override
+  void dispose() {
+    _codeController.dispose();
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  // --- LOGIC ---
+
+  /// Handles the entire process of a player joining a quiz.
+  Future<void> _handleJoinQuiz() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    final socketService = LiveSocketService.instance;
+    final playerName = _nameController.text.trim();
+    final quizCode = _codeController.text.trim().toUpperCase();
+
+    try {
+      // Connect to the real-time server and join the session in one step.
+      socketService.connect();
+        final response = await socketService.joinAsPlayer(
+        code: quizCode,
+        name: playerName,
+      );
+
+      if (mounted) {
+        // TODO: Replace this with navigation to the PlayerLobbyScreen
+        _showSuccessDialog(playerName, quizCode);
+        /*
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => PlayerLobbyScreen(
+              sessionId: response['sessionId'],
+              playerId: response['playerId'],
+              playerName: playerName,
+            ),
+          ),
+        );
+        */
+      }
+    } on SocketException catch (e) {
+      if (mounted) {
+        _showErrorDialog(e.message);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  // --- UI FEEDBACK ---
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Failed to Join'),
+        content: Text(message),
+        actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK'))],
+      ),
+    );
+  }
+
+  void _showSuccessDialog(String name, String code) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Joined Successfully!'),
+        content: Text('Welcome, $name! You have joined quiz $code. Waiting for the host to start.'),
+        actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK'))],
+      ),
+    );
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -35,91 +113,58 @@ class EnterQuizCodeScreen extends StatelessWidget {
               ),
             ],
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Enter Quiz Code',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 30),
-
-              // --- Name Field ---
-              TextField(
-                controller: _nameController,
-                decoration: InputDecoration(
-                  hintText: 'Enter your name',
-                  filled: true,
-                  fillColor: Colors.grey[100],
-                  contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Join a Game', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 30),
+                TextFormField(
+                  controller: _nameController,
+                  decoration: InputDecoration(
+                    hintText: 'Enter your name',
+                    filled: true,
+                    fillColor: Colors.grey[100],
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                   ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) return "Name cannot be empty.";
+                    if (value.length < 2) return "Name must be at least 2 characters.";
+                    return null;
+                  },
                 ),
-              ),
-
-              const SizedBox(height: 20),
-
-              // --- Quiz Code Field ---
-              TextField(
-                controller: _codeController,
-                decoration: InputDecoration(
-                  hintText: 'Enter code here',
-                  filled: true,
-                  fillColor: Colors.grey[100],
-                  contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+                const SizedBox(height: 20),
+                TextFormField(
+                  controller: _codeController,
+                  decoration: InputDecoration(
+                    hintText: 'Enter quiz code',
+                    filled: true,
+                    fillColor: Colors.grey[100],
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                   ),
+                  textCapitalization: TextCapitalization.characters,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) return "Code cannot be empty.";
+                    return null;
+                  },
                 ),
-              ),
-
-              const SizedBox(height: 20),
-
-              Divider(thickness: 0.3,color: Colors.black,),
-
-              const SizedBox(height: 10),
-
-              ElevatedButton(
-                onPressed: () {
-                  final random = Random();
-                  final randomPic = _profilePictures[random.nextInt(_profilePictures.length)];
-
-                  final playerName = _nameController.text.trim();
-                  final quizCode = _codeController.text.trim();
-
-                  if (playerName.isEmpty || quizCode.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Please enter both name and quiz code")),
-                    );
-                    return;
-                  }
-
-                  // TODO: Pass playerName, randomPic, and quizCode to next screen
-                  // Example:
-                  // Navigator.push(context, MaterialPageRoute(
-                  //   builder: (_) => TakeQuizScreen(
-                  //     name: playerName,
-                  //     profilePic: randomPic,
-                  //     code: quizCode,
-                  //   ),
-                  // ));
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.black,
-                  foregroundColor: Colors.white,
-                  maximumSize: const Size(200, 70),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                  elevation: 4,
-                  shadowColor: Colors.black.withOpacity(0.3),
+                const SizedBox(height: 30),
+                ElevatedButton(
+                  onPressed: _isLoading ? null : _handleJoinQuiz,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.black,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(200, 50),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                    elevation: 4,
+                  ),
+                  child: _isLoading
+                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3))
+                      : const Text('ENTER', style: TextStyle(fontSize: 17)),
                 ),
-                child: const Text(
-                  'ENTER',
-                  style: TextStyle(fontSize: 17),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

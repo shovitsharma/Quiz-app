@@ -1,175 +1,180 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:quiz_app/auth/live_models.dart';
+import 'package:quiz_app/auth/socket_service.dart';
+import 'package:quiz_app/client/pages/leaderboard.dart';
 
-class QuizQuestion {
-  String question;
-  List<String> options;
-  int correctIndex; // not shown to contestant
-
-  QuizQuestion({
-    required this.question,
-    required this.options,
-    required this.correctIndex,
-  });
-}
 
 class TakeQuizScreen extends StatefulWidget {
-  final List<QuizQuestion> questions;
+  // ... (constructor remains the same)
+  final String sessionId;
+  final String playerId;
+  final String playerName; 
+  final LiveQuestion initialQuestion;
 
-  const TakeQuizScreen({super.key, required this.questions});
+  const TakeQuizScreen({
+    super.key,
+    required this.sessionId,
+    required this.playerId,
+    required this.playerName,
+    required this.initialQuestion,
+  });
+
 
   @override
   _TakeQuizScreenState createState() => _TakeQuizScreenState();
 }
 
 class _TakeQuizScreenState extends State<TakeQuizScreen> {
-  int _currentQuestion = 0;
-  Map<int, int> _selectedAnswers = {}; // questionIndex -> selected option index
+  // ... (state variables remain the same)
+  final _socketService = LiveSocketService.instance;
+  late LiveQuestion _currentQuestion;
+  List<LobbyPlayer> _leaderboard = [];
+  final Map<int, int> _selectedAnswers = {}; // Tracks {questionIndex: answerIndex}
+
+  // Stream subscriptions to be cancelled on dispose
+  StreamSubscription? _questionSubscription;
+  StreamSubscription? _leaderboardSubscription;
+  StreamSubscription? _quizEndedSubscription;
+
 
   @override
-  Widget build(BuildContext context) {
-    final question = widget.questions[_currentQuestion];
+  void initState() {
+    super.initState();
+    _currentQuestion = widget.initialQuestion;
+    _subscribeToEvents();
+  }
 
-    return Scaffold(
-      backgroundColor: Colors.grey[100],
-      body: Stack(
-        children: [
-          _buildBackground(),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const SizedBox(height: 32),
-                  _buildQuestionCard(question.question),
-                  const SizedBox(height: 30),
-                  // Options
-                  Column(
-  children: List.generate(question.options.length, (index) {
-    final isSelected = _selectedAnswers[_currentQuestion] == index;
-    final label = String.fromCharCode(65 +index); // A., B., C., D.
+  @override
+  void dispose() {
+    _questionSubscription?.cancel();
+    _leaderboardSubscription?.cancel();
+    _quizEndedSubscription?.cancel();
+    super.dispose();
+  }
+  
+  void _subscribeToEvents() {
+    // ... (questionSubscription and leaderboardSubscription remain the same)
+      // Listen for the next question from the host.
+    _questionSubscription = _socketService.questions.listen((question) {
+      if (mounted) {
+        setState(() {
+          _currentQuestion = question;
+        });
+      }
+    });
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0), // spacing between options
-      child: Container(
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.lightBlue.shade100 : Colors.white,
-          border: Border.all(
-            color: isSelected ? Colors.blue : Colors.grey.shade400,
-            width: 2,
-          ),
-          borderRadius: BorderRadius.circular(15),
-          boxShadow: [
-            BoxShadow(
-              color: const Color.fromARGB(65, 0, 0, 0),
-              blurRadius: 5,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(left: 20, right: 12),
-              child: Text(
-                '$label.',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey[600],
-                ),
-              ),
-            ),
-            Expanded(
-              child: GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _selectedAnswers[_currentQuestion] = index;
-                  });
-                },
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  child: Text(
-                    question.options[index],
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                ),
-              ),
-            ),
-            GestureDetector(
-              onTap: () {
-                setState(() {
-                  _selectedAnswers[_currentQuestion] = index;
-                });
-              },
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Icon(
-                  isSelected ? Icons.check_circle : Icons.radio_button_unchecked,
-                  color: isSelected ? Colors.blue : Colors.grey.shade400,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }),
-),
-                  const Spacer(),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      ElevatedButton(
-                        onPressed: _currentQuestion == 0
-                            ? null
-                            : () {
-                                setState(() {
-                                  _currentQuestion--;
-                                });
-                              },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.yellow.shade700,
-                          foregroundColor: Colors.white,
-                          disabledBackgroundColor: Colors.grey.shade400,
-                          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                        ),
-                        child: const Text('Previous', style: TextStyle(fontWeight: FontWeight.bold)),
-                      ),
-                      ElevatedButton(
-                        onPressed: () {
-                          if (_currentQuestion < widget.questions.length - 1) {
-                            setState(() {
-                              _currentQuestion++;
-                            });
-                          } else {
-                            _showScore();
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue.shade600,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                        ),
-                        child: Text(
-                          _currentQuestion == widget.questions.length - 1 ? 'Submit' : 'Next',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                ],
-              ),
+    // Listen for leaderboard updates between questions.
+    _leaderboardSubscription = _socketService.leaderboardUpdates.listen((leaderboard) {
+      if (mounted) {
+        setState(() {
+          _leaderboard = leaderboard;
+        });
+      }
+    });
+
+
+    // ✨ MODIFIED PART: Listen for the signal that the quiz has ended.
+    _quizEndedSubscription = _socketService.quizEnded.listen((data) {
+      if (mounted) {
+        final finalLeaderboard = (data['leaderboard'] as List)
+            .map((p) => LobbyPlayer.fromJson(p))
+            .toList();
+
+        // Navigate to the new leaderboard screen instead of showing a dialog.
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => FinalLeaderboardScreen(
+              finalLeaderboard: finalLeaderboard,
+              currentPlayerName: widget.playerName,
             ),
           ),
-        ],
+        );
+      }
+    });
+  }
+  
+  // ✨ THIS ENTIRE METHOD IS NO LONGER NEEDED AND CAN BE DELETED
+  // void _showFinalResults(List<LobbyPlayer> finalLeaderboard) { ... }
+
+  // ... (the rest of the TakeQuizScreen code remains the same)
+  
+  Future<void> _submitAnswer(int answerIndex) async {
+    final questionIndex = _currentQuestion.index;
+
+    // Prevent re-answering the same question.
+    if (_selectedAnswers.containsKey(questionIndex)) return;
+
+    setState(() {
+      _selectedAnswers[questionIndex] = answerIndex;
+    });
+
+    try {
+      final response = await _socketService.submitAnswer(
+        questionIndex: questionIndex,
+        answerIndex: answerIndex,
+      );
+      if (mounted) {
+        _showAnswerFeedback(response['correct'] ?? false);
+      }
+    } on SocketException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  // --- UI FEEDBACK & DIALOGS ---
+
+  void _showAnswerFeedback(bool isCorrect) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(isCorrect ? "Correct!" : "Incorrect!"),
+        backgroundColor: isCorrect ? Colors.green : Colors.red,
+        duration: const Duration(seconds: 1),
       ),
     );
   }
 
+  @override
+  Widget build(BuildContext context) {
+    final hasAnswered = _selectedAnswers.containsKey(_currentQuestion.index);
+
+    return Scaffold(
+      backgroundColor: Colors.blue.shade50,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildQuestionCard(_currentQuestion.text),
+              const SizedBox(height: 30),
+              ...List.generate(_currentQuestion.options.length, (index) {
+                return _buildOptionTile(
+                  text: _currentQuestion.options[index],
+                  index: index,
+                  isSelected: _selectedAnswers[_currentQuestion.index] == index,
+                  hasAnswered: hasAnswered,
+                );
+              }),
+              const Spacer(),
+              if (hasAnswered)
+                const Center(
+                  child: Text(
+                    'Waiting for the next question...',
+                    style: TextStyle(fontSize: 16, color: Colors.grey),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+  
   Widget _buildQuestionCard(String questionText) {
     return Container(
       height: 200,
@@ -177,55 +182,53 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 5))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 10, offset: const Offset(0, 5))],
       ),
-      child: Text(
-        questionText,
-        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+      child: Center(
+        child: Text(
+          questionText,
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+        ),
       ),
     );
   }
 
-  Widget _buildBackground() {
-    return ClipPath(
-      clipper: _BackgroundClipper(),
-      child: Container(height: 250, color: Colors.red.shade400),
-    );
-  }
+  Widget _buildOptionTile({
+    required String text,
+    required int index,
+    required bool isSelected,
+    required bool hasAnswered,
+  }) {
+    Color getBorderColor() {
+      if (hasAnswered && isSelected) return Colors.blue.shade700;
+      return Colors.grey.shade300;
+    }
 
-  void _showScore() {
-    int score = 0;
-    widget.questions.asMap().forEach((i, q) {
-      if (_selectedAnswers[i] == q.correctIndex) score++;
-    });
-
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Quiz Completed'),
-        content: Text('Your score: $score / ${widget.questions.length}'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: InkWell(
+        onTap: hasAnswered ? null : () => _submitAnswer(index),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: getBorderColor(), width: 2),
+            borderRadius: BorderRadius.circular(15),
           ),
-        ],
+          child: Row(
+            children: [
+              Text(
+                '${String.fromCharCode(65 + index)}. ',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              Expanded(
+                child: Text(text, style: const TextStyle(fontSize: 18)),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
-}
-
-class _BackgroundClipper extends CustomClipper<Path> {
-  @override
-  Path getClip(Size size) {
-    final path = Path();
-    path.lineTo(0, size.height * 0.8);
-    path.quadraticBezierTo(size.width / 2, size.height, size.width, size.height * 0.8);
-    path.lineTo(size.width, 0);
-    path.close();
-    return path;
-  }
-
-  @override
-  bool shouldReclip(CustomClipper<Path> oldClipper) => false;
 }
