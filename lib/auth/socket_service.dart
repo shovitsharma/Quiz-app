@@ -136,6 +136,8 @@ class LiveSocketService {
   Future<Map<String, dynamic>> submitAnswer({required int questionIndex, required int answerIndex}) =>
       _emitWithAck('player:answer', {'questionIndex': questionIndex, 'answerIndex': answerIndex});
 
+  Future<Map<String, dynamic>> endQuiz() => _emitWithAck('host:end', null);
+  
   /// Call this when the service is no longer needed to prevent memory leaks.
   void dispose() {
     _connectionStatusController.close();
@@ -145,4 +147,5 @@ class LiveSocketService {
     _quizEndedController.close();
     disconnect();
   }
+
 }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:quiz_app/auth/live_models.dart';
 import 'package:quiz_app/auth/socket_service.dart';
+import 'package:quiz_app/host_afterstart.dart';
 
 class HostLobbyScreen extends StatefulWidget {
   final String sessionId;
@@ -91,21 +92,28 @@ Future<void> _connectAndJoin() async {
 }
 
   /// Sends the command to the server to start the quiz for all players.
-  Future<void> _handleStartQuiz() async {
-    setState(() => _isStartingQuiz = true);
-    try {
-      await _socketService.startQuiz();
-      // On success, the server will emit the first question.
-      // We would navigate to the Host's question-control screen here.
-      // Navigator.of(context).push(MaterialPageRoute(builder: (_) => HostQuestionScreen()));
-      print("Quiz started successfully!");
-    } on SocketException catch (e) {
-      if (mounted) _showErrorDialog(e.message);
-    } finally {
-      if (mounted) setState(() => _isStartingQuiz = false);
-    }
-  }
+  // In HostLobbyScreen.dart
 
+Future<void> _handleStartQuiz() async {
+  setState(() => _isStartingQuiz = true);
+  try {
+    await _socketService.startQuiz();
+    
+    // On success, the server will emit the first question.
+    // ✅ UNCOMMENT this line to move the host to the next screen.
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => HostQuestionScreen()) // Or whatever your next screen is
+    );
+
+  } on SocketException catch (e) {
+    if (mounted) {
+      _showErrorDialog(e.message);
+      // Only reset loading state if there's an error
+      setState(() => _isStartingQuiz = false);
+    }
+  } 
+  // NOTE: No 'finally' block is needed if you navigate away on success.
+}
   // --- UI FEEDBACK ---
   void _showErrorDialog(String message) {
     showDialog(
