@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:quiz_app/auth/auth_service.dart';
 import 'package:quiz_app/auth/live_quizservice.dart';
 import 'package:quiz_app/auth/quiz_service.dart';
-import 'package:quiz_app/host_lobbby.dart';
-import 'package:quiz_app/login.dart'; // Assuming QuizPageTemplate is in here
+import 'package:quiz_app/login.dart';
+import 'package:quiz_app/quiz_created.dart'; // Assuming QuizPageTemplate is in here
 
 // --- DATA MODELS ---
 class Question {
