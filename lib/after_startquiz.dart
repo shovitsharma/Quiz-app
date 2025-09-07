@@ -105,10 +105,12 @@ class _HostQuestionScreenState extends State<HostQuestionScreen> {
   @override
   Widget build(BuildContext context) {
     return QuizPageTemplate(
-      child: Center(
-        child: _currentQuestion == null
-            ? const CircularProgressIndicator(color: Colors.white)
-            : _buildQuestionControlCard(),
+      child: SingleChildScrollView(
+        child: Center(
+          child: _currentQuestion == null
+              ? const CircularProgressIndicator(color: Colors.white)
+              : _buildQuestionControlCard(),
+        ),
       ),
     );
   }
