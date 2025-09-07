@@ -15,138 +15,189 @@ class FinalLeaderboardScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Separate the top three for the podium
-    final topThree = finalLeaderboard.take(3).toList();
-    final rest = finalLeaderboard.skip(3).toList();
-
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Final Results"),
-        automaticallyImplyLeading: false, // Removes the back button
-      ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      backgroundColor: Colors.grey[100],
+      body: Stack(
         children: [
-          // Podium for Top 3
-          _Podium(topThree: topThree, currentPlayerName: currentPlayerName),
+          // The same red curved background from the quiz screen
+          _buildBackground(),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // --- Header ---
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 20.0),
+                    child: Text(
+                      "Final Results",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
 
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-            child: Text("All Scores", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          ),
-          
-          // List for the rest of the players
-          Expanded(
-            child: ListView.builder(
-              itemCount: rest.length,
-              itemBuilder: (context, index) {
-                final player = rest[index];
-                final isYou = player.name == currentPlayerName;
-                return ListTile(
-                  leading: CircleAvatar(child: Text('${index + 4}')), // Rank starts from 4
-                  title: Text(player.name, style: TextStyle(fontWeight: isYou ? FontWeight.bold : FontWeight.normal)),
-                  trailing: Text('${player.score} pts'),
-                  tileColor: isYou ? Colors.blue.shade50 : null,
-                );
-              },
-            ),
-          ),
-          
-          // "Done" button to go home
-          Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: ElevatedButton(
-              onPressed: () {
-                LiveSocketService.instance.disconnect(); // Disconnect from the session
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const QuizFirstPage()),
-                  (route) => false, // Clear navigation stack
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                backgroundColor: Colors.black,
+                  // --- Leaderboard Card ---
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.all(16.0),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 10,
+                            offset: const Offset(0, 5),
+                          )
+                        ],
+                      ),
+                      child: ListView.separated(
+                        itemCount: finalLeaderboard.length,
+                        separatorBuilder: (context, index) => const Divider(),
+                        itemBuilder: (context, index) {
+                          final player = finalLeaderboard[index];
+                          return _PlayerTile(
+                            player: player,
+                            rank: index + 1,
+                            isCurrentUser: player.name == currentPlayerName,
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+
+                  // --- "Finish" Button ---
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 24.0),
+                    child: ElevatedButton(
+                      onPressed: () {
+                        LiveSocketService.instance.disconnect(); // Disconnect from the session
+                        Navigator.of(context).pushAndRemoveUntil(
+                          MaterialPageRoute(builder: (_) => const QuizFirstPage()),
+                          (route) => false, // Clear navigation stack
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red.shade400, // Matching color
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20), // Matching shape
+                        ),
+                      ),
+                      child: const Text(
+                        "Finish",
+                        style: TextStyle(fontSize: 18, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              child: const Text("Finish", style: TextStyle(fontSize: 18)),
             ),
           ),
         ],
       ),
     );
   }
-}
 
-// --- Custom Podium Widget ---
-class _Podium extends StatelessWidget {
-  final List<LobbyPlayer> topThree;
-  final String currentPlayerName;
-
-  const _Podium({required this.topThree, required this.currentPlayerName});
-
-  @override
-  Widget build(BuildContext context) {
-    // Handle cases with fewer than 3 players
-    final gold = topThree.isNotEmpty ? topThree[0] : null;
-    final silver = topThree.length > 1 ? topThree[1] : null;
-    final bronze = topThree.length > 2 ? topThree[2] : null;
-
-    return Container(
-      padding: const EdgeInsets.all(16.0),
-      color: Colors.grey[200],
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          if (silver != null) _PodiumPlace(player: silver, rank: 2, color: Colors.grey.shade400, height: 120),
-          if (gold != null) _PodiumPlace(player: gold, rank: 1, color: Colors.amber.shade400, height: 150),
-          if (bronze != null) _PodiumPlace(player: bronze, rank: 3, color: Colors.brown.shade400, height: 100),
-        ],
+  /// Builds the red curved shape in the background. (Copied from TakeQuizScreen)
+  Widget _buildBackground() {
+    return ClipPath(
+      clipper: _BackgroundClipper(),
+      child: Container(
+        height: 200,
+        color: Colors.red.shade400,
       ),
     );
   }
 }
 
-class _PodiumPlace extends StatelessWidget {
+
+// --- Custom Player Tile Widget ---
+class _PlayerTile extends StatelessWidget {
   final LobbyPlayer player;
   final int rank;
-  final Color color;
-  final double height;
+  final bool isCurrentUser;
 
-  const _PodiumPlace({
+  const _PlayerTile({
     required this.player,
     required this.rank,
-    required this.color,
-    required this.height,
+    this.isCurrentUser = false,
   });
+
+  Widget _getRankIcon() {
+    switch (rank) {
+      case 1:
+        return const Text("🥇", style: TextStyle(fontSize: 24));
+      case 2:
+        return const Text("🥈", style: TextStyle(fontSize: 24));
+      case 3:
+        return const Text("🥉", style: TextStyle(fontSize: 24));
+      default:
+        return Text(
+          '$rank',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Colors.grey.shade600,
+          ),
+        );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(player.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 4),
-        Container(
-          height: height,
-          width: 80,
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(8),
-              topRight: Radius.circular(8),
-            ),
-            border: Border.all(color: Colors.black54, width: 2),
-          ),
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text('$rank', style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
-                Text('${player.score} pts', style: const TextStyle(color: Colors.white)),
-              ],
+    final highlightColor = isCurrentUser ? Colors.blue.shade50 : null;
+    final fontWeight = isCurrentUser ? FontWeight.bold : FontWeight.normal;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 12.0),
+      decoration: BoxDecoration(
+        color: highlightColor,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          SizedBox(width: 40, child: Center(child: _getRankIcon())),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Text(
+              player.name,
+              style: TextStyle(fontSize: 18, fontWeight: fontWeight),
             ),
           ),
-        ),
-      ],
+          Text(
+            '${player.score} pts',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
     );
   }
+}
+
+
+// A custom clipper to create the curved background shape. (Copied from TakeQuizScreen)
+class _BackgroundClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    final path = Path();
+    path.lineTo(0, size.height * 0.8);
+    path.quadraticBezierTo(
+      size.width / 2,
+      size.height,
+      size.width,
+      size.height * 0.8,
+    );
+    path.lineTo(size.width, 0);
+    path.close();
+    return path;
+  }
+
+  @override
+  bool shouldReclip(CustomClipper<Path> oldClipper) => false;
 }
