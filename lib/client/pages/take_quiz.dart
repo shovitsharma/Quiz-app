@@ -170,7 +170,7 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
                       // Button is disabled until an option is selected
                       onPressed: _tempSelectedAnswerIndex != null ? _submitAnswer : null,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red.shade400,
+                        backgroundColor: const Color(0xFF1A73E9),
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(20),
@@ -233,17 +233,6 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
                 questionNumber,
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade300),
-                  borderRadius: BorderRadius.circular(5),
-                ),
-                child: const Text(
-                  '00:00', // Placeholder for timer
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-                ),
-              ),
             ],
           ),
           const SizedBox(height: 20),
@@ -268,7 +257,7 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
   }) {
     Color getBackgroundColor() {
       // Highlight the option if it's the currently selected one.
-      if (isSelected) return borderColor.withOpacity(0.1);
+      if (isSelected) return const Color.fromARGB(255, 133, 195, 245);
       return Colors.white;
     }
 
@@ -291,7 +280,7 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: borderColor),
               ),
               Expanded(
-                child: Text(text, style: const TextStyle(fontSize: 18)),
+                child: Text(text, style: const TextStyle(fontSize: 18,color: Colors.black)),
               ),
             ],
           ),
