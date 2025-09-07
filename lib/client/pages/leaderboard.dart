@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:quiz_app/auth/live_models.dart';
 import 'package:quiz_app/auth/socket_service.dart';
+import 'package:quiz_app/client/pages/thankyou_page.dart';
 import 'package:quiz_app/first_page.dart';
 
 class FinalLeaderboardScreen extends StatelessWidget {
@@ -78,7 +79,7 @@ class FinalLeaderboardScreen extends StatelessWidget {
                       onPressed: () {
                         LiveSocketService.instance.disconnect(); // Disconnect from the session
                         Navigator.of(context).pushAndRemoveUntil(
-                          MaterialPageRoute(builder: (_) => const QuizFirstPage()),
+                          MaterialPageRoute(builder: (_) => const ThankYouPage()),
                           (route) => false, // Clear navigation stack
                         );
                       },

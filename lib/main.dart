@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:quiz_app/client/pages/thankyou_page.dart';
 import 'package:quiz_app/first_page.dart';
 
 void main() {
