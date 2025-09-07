@@ -25,95 +25,91 @@ class _HostLobbyScreenState extends State<HostLobbyScreen> {
   // --- STATE ---
   final _socketService = LiveSocketService.instance;
   StreamSubscription? _lobbySubscription;
+  StreamSubscription? _questionSubscription;
   List<LobbyPlayer> _players = [];
   bool _isStartingQuiz = false;
 
   @override
   void initState() {
     super.initState();
-    _connectAndJoin();
+    _connectAndJoin(); // FIX 1: Connect to the server when the screen loads
 
-    // Listen to the stream of lobby updates to rebuild the UI in real-time
+    // Listen for players joining/leaving the lobby
     _lobbySubscription = _socketService.lobbyUpdates.listen((players) {
-      setState(() {
-        _players = players;
-      });
+      if (mounted) {
+        setState(() {
+          _players = players;
+        });
+      }
+    });
+
+    // Listen for the first question event to navigate
+    _questionSubscription = _socketService.questions.listen((firstQuestion) {
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => HostQuestionScreen(initialQuestion: firstQuestion),
+          ),
+        );
+      }
     });
   }
 
   @override
   void dispose() {
-    // Clean up the subscription and disconnect to prevent memory leaks
+    // Clean up all subscriptions to prevent memory leaks
     _lobbySubscription?.cancel();
-    _socketService.disconnect();
+    _questionSubscription?.cancel();
     super.dispose();
   }
 
   // --- LOGIC ---
+  Future<void> _connectAndJoin() async {
+    final socketService = LiveSocketService.instance;
+    final connectionCompleter = Completer<void>();
 
-  /// Connects to the socket server and joins the session as the host.
-  // A more resilient way to connect and join
+    StreamSubscription? connectionSub;
+    connectionSub = socketService.connectionStatus.listen((isConnected) {
+      if (isConnected && !connectionCompleter.isCompleted) {
+        connectionCompleter.complete();
+        connectionSub?.cancel();
+      }
+    });
 
-Future<void> _connectAndJoin() async {
-  final socketService = LiveSocketService.instance;
-  
-  // Create a completer to wait for the connection
-  final connectionCompleter = Completer<void>();
+    socketService.connect();
 
-  StreamSubscription? connectionSub;
-  connectionSub = socketService.connectionStatus.listen((isConnected) {
-    if (isConnected && !connectionCompleter.isCompleted) {
-      // Once connected, complete the future and cancel this subscription
-      connectionCompleter.complete();
-      connectionSub?.cancel();
+    try {
+      await connectionCompleter.future.timeout(const Duration(seconds: 10));
+      await socketService.joinAsHost(
+        sessionId: widget.sessionId,
+        hostKey: widget.hostKey,
+      );
+    } on TimeoutException {
+      if (mounted) _showErrorDialog("Could not connect to the server in time. Please try again.");
+    } on SocketException catch (e) {
+      if (mounted) _showErrorDialog(e.message);
+    } finally {
+      connectionSub.cancel();
     }
-  });
-
-  // Start the connection process
-  socketService.connect();
-
-  try {
-    // Wait for the connection to be established (with a timeout)
-    await connectionCompleter.future.timeout(const Duration(seconds: 10));
-
-    // Now that we're definitely connected, join as the host
-    await socketService.joinAsHost(
-      sessionId: widget.sessionId,
-      hostKey: widget.hostKey,
-    );
-  } on TimeoutException {
-     if (mounted) _showErrorDialog("Could not connect to the server in time. Please try again.");
-  } on SocketException catch (e) {
-    if (mounted) _showErrorDialog(e.message);
-  } finally {
-    // Clean up the subscription in case of an error
-    connectionSub.cancel();
   }
-}
 
   /// Sends the command to the server to start the quiz for all players.
-  // In HostLobbyScreen.dart
+  Future<void> _handleStartQuiz() async {
+    setState(() => _isStartingQuiz = true);
+    try {
+      await _socketService.startQuiz();
+      // FIX 2: Navigation is now handled by the listener in initState.
+      // The line below has been REMOVED.
+      // Navigator.of(context).pushReplacement(...);
 
-Future<void> _handleStartQuiz() async {
-  setState(() => _isStartingQuiz = true);
-  try {
-    await _socketService.startQuiz();
-    
-    // On success, the server will emit the first question.
-    // ✅ UNCOMMENT this line to move the host to the next screen.
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => HostQuestionScreen()) // Or whatever your next screen is
-    );
-
-  } on SocketException catch (e) {
-    if (mounted) {
-      _showErrorDialog(e.message);
-      // Only reset loading state if there's an error
-      setState(() => _isStartingQuiz = false);
+    } on SocketException catch (e) {
+      if (mounted) {
+        _showErrorDialog(e.message);
+        setState(() => _isStartingQuiz = false);
+      }
     }
-  } 
-  // NOTE: No 'finally' block is needed if you navigate away on success.
-}
+  }
+  
   // --- UI FEEDBACK ---
   void _showErrorDialog(String message) {
     showDialog(
@@ -153,7 +149,6 @@ Future<void> _handleStartQuiz() async {
   }
 
   // --- WIDGET BUILDERS ---
-
   Widget _buildJoinCodeCard() {
     return Card(
       elevation: 6,
@@ -226,6 +221,7 @@ Future<void> _handleStartQuiz() async {
       label: _isStartingQuiz
           ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white))
           : const Text("Start Quiz"),
+      // FIX 3: The button now correctly checks the player list
       onPressed: (_players.isEmpty || _isStartingQuiz) ? null : _handleStartQuiz,
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.black,
