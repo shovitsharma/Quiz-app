@@ -26,7 +26,11 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
   final _socketService = LiveSocketService.instance;
   late LiveQuestion _currentQuestion;
   List<LobbyPlayer> _leaderboard = [];
-  final Map<int, int> _selectedAnswers = {}; // Tracks {questionIndex: answerIndex}
+
+  /// Tracks submitted answers: {questionIndex: answerIndex}
+  final Map<int, int> _submittedAnswers = {};
+  /// Tracks the currently selected option for the current question before submission.
+  int? _tempSelectedAnswerIndex;
 
   StreamSubscription? _questionSubscription;
   StreamSubscription? _leaderboardSubscription;
@@ -52,6 +56,7 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
       if (mounted) {
         setState(() {
           _currentQuestion = question;
+          _tempSelectedAnswerIndex = null; // Reset selection for new question
         });
       }
     });
@@ -82,24 +87,39 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
     });
   }
 
-  Future<void> _submitAnswer(int answerIndex) async {
-    final questionIndex = _currentQuestion.index;
-    if (_selectedAnswers.containsKey(questionIndex)) return;
-
+  /// Sets the temporary selected answer index when a user taps an option.
+  void _selectOption(int index) {
+    if (_submittedAnswers.containsKey(_currentQuestion.index)) return;
     setState(() {
-      _selectedAnswers[questionIndex] = answerIndex;
+      _tempSelectedAnswerIndex = index;
+    });
+  }
+
+  /// Submits the currently selected answer to the server.
+  Future<void> _submitAnswer() async {
+    final questionIndex = _currentQuestion.index;
+    final answerIndex = _tempSelectedAnswerIndex;
+
+    // Guard against submitting without a selection or re-submitting.
+    if (answerIndex == null || _submittedAnswers.containsKey(questionIndex)) return;
+
+    // Lock the answer in the UI immediately for a responsive feel.
+    setState(() {
+      _submittedAnswers[questionIndex] = answerIndex;
     });
 
     try {
-      final response = await _socketService.submitAnswer(
+      // Submit to the server in the background. No feedback is shown.
+      await _socketService.submitAnswer(
         questionIndex: questionIndex,
         answerIndex: answerIndex,
       );
-      if (mounted) {
-        _showAnswerFeedback(response['correct'] ?? false);
-      }
     } on SocketException catch (e) {
       if (mounted) {
+        // If submission fails, unlock the UI to allow the user to try again.
+        setState(() {
+          _submittedAnswers.remove(questionIndex);
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(e.message), backgroundColor: Colors.red),
         );
@@ -107,20 +127,10 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
     }
   }
 
-  void _showAnswerFeedback(bool isCorrect) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(isCorrect ? "Correct!" : "Incorrect!"),
-        backgroundColor: isCorrect ? Colors.green : Colors.red,
-        duration: const Duration(seconds: 1),
-      ),
-    );
-  }
-
   // --- UI BUILD METHOD ---
   @override
   Widget build(BuildContext context) {
-    final hasAnswered = _selectedAnswers.containsKey(_currentQuestion.index);
+    final hasAnswered = _submittedAnswers.containsKey(_currentQuestion.index);
     final optionColors = [
       Colors.blue.shade700,
       Colors.yellow.shade700,
@@ -148,13 +158,31 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
                     return _buildOptionTile(
                       text: _currentQuestion.options[index],
                       index: index,
-                      isSelected: _selectedAnswers[_currentQuestion.index] == index,
+                      isSelected: _tempSelectedAnswerIndex == index,
                       hasAnswered: hasAnswered,
-                      borderColor: optionColors[index % optionColors.length], // Assigns a unique color
+                      borderColor: optionColors[index % optionColors.length],
                     );
                   }),
                   const Spacer(),
-                  if (hasAnswered)
+                  // Conditionally show Submit button or "Waiting..." text
+                  if (!hasAnswered)
+                    ElevatedButton(
+                      // Button is disabled until an option is selected
+                      onPressed: _tempSelectedAnswerIndex != null ? _submitAnswer : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red.shade400,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        disabledBackgroundColor: Colors.grey.shade400,
+                      ),
+                      child: const Text(
+                        'Submit',
+                        style: TextStyle(fontSize: 18, color: Colors.white),
+                      ),
+                    )
+                  else
                     const Center(
                       child: Text(
                         'Waiting for the next question...',
@@ -239,14 +267,16 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
     required Color borderColor,
   }) {
     Color getBackgroundColor() {
-      if (hasAnswered && isSelected) return borderColor.withOpacity(0.1);
+      // Highlight the option if it's the currently selected one.
+      if (isSelected) return borderColor.withOpacity(0.1);
       return Colors.white;
     }
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: InkWell(
-        onTap: hasAnswered ? null : () => _submitAnswer(index),
+        // Allow tapping only if the answer has not been submitted for this question.
+        onTap: hasAnswered ? null : () => _selectOption(index),
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
