@@ -1,7 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:quiz_app/auth/socket_service.dart';
 import 'package:quiz_app/client/pages/loading_quiz.dart';
-import 'package:quiz_app/login.dart';  
+import 'package:quiz_app/login.dart';
 
 class EnterQuizCodeScreen extends StatefulWidget {
   const EnterQuizCodeScreen({super.key});
@@ -25,7 +26,6 @@ class _EnterQuizCodeScreenState extends State<EnterQuizCodeScreen> {
   }
 
   // --- LOGIC ---
-
   /// Handles the entire process of a player joining a quiz.
   Future<void> _handleJoinQuiz() async {
     if (!_formKey.currentState!.validate()) {
@@ -39,31 +39,46 @@ class _EnterQuizCodeScreenState extends State<EnterQuizCodeScreen> {
     final quizCode = _codeController.text.trim().toUpperCase();
 
     try {
-      // Connect to the real-time server and join the session in one step.
+      // --- IMPROVED CONNECTION LOGIC ---
+      // 1. Create a Completer to await the connection status.
+      final connectionCompleter = Completer<void>();
+      StreamSubscription? connectionSub;
+
+      // Listen for the connection stream to emit 'true'.
+      connectionSub = socketService.connectionStatus.listen((isConnected) {
+        if (isConnected && !connectionCompleter.isCompleted) {
+          connectionCompleter.complete();
+          connectionSub?.cancel(); // Clean up the listener once connected.
+        }
+      });
+
+      // 2. Initiate the connection.
       socketService.connect();
-        final response = await socketService.joinAsPlayer(
+
+      // 3. Wait for the connection to complete, with a 10-second timeout.
+      await connectionCompleter.future.timeout(const Duration(seconds: 10));
+
+      // 4. Now that we are connected, join the game.
+      final response = await socketService.joinAsPlayer(
         code: quizCode,
         name: playerName,
       );
 
-      // In EnterQuizCodeScreen.dart -> _handleJoinQuiz()
-
-if (mounted) {
-  // 1. REMOVE or COMMENT OUT the dialog call:
-  // _showSuccessDialog(playerName, quizCode);
-
-  // 2. UNCOMMENT the navigation logic:
-  Navigator.of(context).pushReplacement(
-    MaterialPageRoute(
-      builder: (_) => PlayerLobbyScreen(
-        sessionId: response['sessionId'],
-        playerId: response['playerId'],
-        playerName: playerName,
-        quizCode: quizCode, // Make sure to pass the code!
-      ),
-    ),
-  );
-}
+      // 5. Navigate to the lobby screen on success.
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => PlayerLobbyScreen(
+              sessionId: response['sessionId'],
+              playerId: response['playerId'],
+              playerName: playerName,
+              quizCode: quizCode,
+            ),
+          ),
+        );
+      }
+    } on TimeoutException {
+       if (mounted) _showErrorDialog("Connection timed out. Please check your internet and try again.");
     } on SocketException catch (e) {
       if (mounted) {
         _showErrorDialog(e.message);
@@ -86,7 +101,6 @@ if (mounted) {
       ),
     );
   }
-
 
   @override
   Widget build(BuildContext context) {

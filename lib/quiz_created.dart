@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:quiz_app/after_startquiz.dart';
 import 'package:quiz_app/auth/live_models.dart';
 import 'package:quiz_app/auth/socket_service.dart';
+import 'package:quiz_app/login.dart'; // ✨ ADD THIS IMPORT
 
 class HostLobbyScreen extends StatefulWidget {
   final String sessionId;
@@ -32,7 +33,7 @@ class _HostLobbyScreenState extends State<HostLobbyScreen> {
   @override
   void initState() {
     super.initState();
-    _connectAndJoin(); // FIX 1: Connect to the server when the screen loads
+    _connectAndJoin();
 
     // Listen for players joining/leaving the lobby
     _lobbySubscription = _socketService.lobbyUpdates.listen((players) {
@@ -98,10 +99,6 @@ class _HostLobbyScreenState extends State<HostLobbyScreen> {
     setState(() => _isStartingQuiz = true);
     try {
       await _socketService.startQuiz();
-      // FIX 2: Navigation is now handled by the listener in initState.
-      // The line below has been REMOVED.
-      // Navigator.of(context).pushReplacement(...);
-
     } on SocketException catch (e) {
       if (mounted) {
         _showErrorDialog(e.message);
@@ -122,27 +119,23 @@ class _HostLobbyScreenState extends State<HostLobbyScreen> {
     );
   }
 
-  // --- UI BUILD ---
+  // --- UI BUILD (UPDATED FOR CONSISTENCY) ---
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Host Lobby'),
-      ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildJoinCodeCard(),
-              const SizedBox(height: 24),
-              _buildPlayerList(),
-              const SizedBox(height: 24),
-              _buildStartButton(),
-            ],
-          ),
+    // ✨ CHANGED HERE: Replaced Scaffold with QuizPageTemplate
+    return QuizPageTemplate(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildJoinCodeCard(),
+            const SizedBox(height: 24),
+            _buildPlayerList(),
+            const SizedBox(height: 24),
+            _buildStartButton(),
+          ],
         ),
       ),
     );
@@ -221,7 +214,6 @@ class _HostLobbyScreenState extends State<HostLobbyScreen> {
       label: _isStartingQuiz
           ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white))
           : const Text("Start Quiz"),
-      // FIX 3: The button now correctly checks the player list
       onPressed: (_players.isEmpty || _isStartingQuiz) ? null : _handleStartQuiz,
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.black,
