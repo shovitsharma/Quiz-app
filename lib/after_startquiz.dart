@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:quiz_app/auth/live_models.dart';
 import 'package:quiz_app/auth/socket_service.dart';
 import 'package:quiz_app/client/pages/leaderboard.dart';
-import 'package:quiz_app/login.dart'; // Assuming QuizPageTemplate is here
+import 'package:quiz_app/login.dart'; 
 
 class HostQuestionScreen extends StatefulWidget {
   // We can pass the initial question from the lobby to prevent a loading flicker
@@ -47,7 +47,8 @@ class _HostQuestionScreenState extends State<HostQuestionScreen> {
     _questionSubscription = _socketService.questions.listen((question) {
       setState(() {
         _currentQuestion = question;
-        _leaderboard.clear(); // Clear old leaderboard for the new question
+        // ✨ REMOVED: _leaderboard.clear();
+        // This keeps the last known leaderboard visible until the next one arrives.
       });
     });
 
@@ -62,7 +63,7 @@ class _HostQuestionScreenState extends State<HostQuestionScreen> {
         final finalLeaderboard = (finalData['leaderboard'] as List)
             .map((p) => LobbyPlayer.fromJson(p))
             .toList();
-        
+
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
             builder: (_) => FinalLeaderboardScreen(
@@ -79,7 +80,8 @@ class _HostQuestionScreenState extends State<HostQuestionScreen> {
     setState(() => _isLoadingNext = true);
     try {
       await _socketService.nextQuestion();
-      // On success, the 'question:show' stream listener will handle the UI update.
+      // On success, the 'leaderboard:update' and then 'question:show'
+      // stream listeners will handle the UI updates.
     } on SocketException catch (e) {
       if (mounted) _showErrorDialog(e.message);
     } finally {
@@ -104,8 +106,10 @@ class _HostQuestionScreenState extends State<HostQuestionScreen> {
   // --- UI BUILD ---
   @override
   Widget build(BuildContext context) {
+    // Using a SingleChildScrollView to prevent overflow on smaller screens
     return QuizPageTemplate(
       child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(vertical: 20.0),
         child: Center(
           child: _currentQuestion == null
               ? const CircularProgressIndicator(color: Colors.white)
@@ -176,7 +180,7 @@ class _HostQuestionScreenState extends State<HostQuestionScreen> {
 
   Widget _buildLeaderboardList() {
     return SizedBox(
-      height: 150, // Fixed height for the list
+      height: 200, // Adjusted height
       child: _leaderboard.isEmpty
           ? const Center(child: Text("Scores will appear here after the question."))
           : ListView.builder(
