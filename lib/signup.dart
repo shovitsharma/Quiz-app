@@ -53,6 +53,7 @@ class _SignUpPageState extends State<SignUpPage> {
       }
     } on AuthException catch (e) {
       if (mounted) {
+        print("CAUGHT AUTH EXCEPTION: $e");
         _showErrorDialog(e.message);
       }
     } finally {
