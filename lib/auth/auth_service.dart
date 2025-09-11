@@ -13,17 +13,15 @@ class AuthException implements Exception {
 }
 
 /// Manages user authentication (signup, login, token storage).
-/// Implemented as a singleton to ensure a single instance.
 class AuthService {
   // --- Singleton Setup ---
-  AuthService._privateConstructor() {
+  AuthService._internal() {
     // Check initial login status when the service is created
     _checkInitialAuthStatus();
   }
-  static final AuthService instance = AuthService._privateConstructor();
+  static final AuthService instance = AuthService._internal();
 
   // --- Properties ---
-  // CRITICAL FIX: Removed trailing space from the URL
   static const String _baseUrl = "https://team-01-u90d.onrender.com/api";
   final _storage = const FlutterSecureStorage();
   static const _tokenKey = 'jwt_token';
@@ -33,47 +31,47 @@ class AuthService {
   final StreamController<bool> _authStatusController = StreamController<bool>.broadcast();
   Stream<bool> get authStatusStream => _authStatusController.stream;
 
-  // --- Private Helper Methods ---
-
   /// Checks the initial authentication status when the app starts.
   void _checkInitialAuthStatus() async {
     final token = await getToken();
     _authStatusController.add(token != null);
   }
 
-  /// Handles decoding the response and checking for errors robustly.
+  /// A private helper method to handle server responses and errors.
   dynamic _handleResponse(http.Response response) {
+    // Try to decode the body, but handle cases where it might be empty.
+    dynamic body;
+    try {
+      body = jsonDecode(response.body);
+    } catch (e) {
+      // If decoding fails but the status code is successful, return an empty map.
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return {};
+      }
+      // Otherwise, throw an error with the status code.
+      throw AuthException('Server error: ${response.statusCode}');
+    }
+
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      try {
-        // Return null for empty successful responses (e.g., 204 No Content)
-        if (response.body.isEmpty) return null;
-        return jsonDecode(response.body);
-      } catch (e) {
-        throw AuthException('Failed to parse successful server response.');
-      }
+      return body; // If successful, return the decoded JSON body.
     } else {
-      try {
-        final errorBody = jsonDecode(response.body);
-        final errorMessage = errorBody['message'] ?? 'An unknown error occurred';
-        throw AuthException(errorMessage);
-      } catch (e) {
-        // Fallback for non-JSON error responses
-        throw AuthException('Server error: ${response.statusCode}');
-      }
+      // If the server returned an error, find the 'message' field in the JSON.
+      final errorMessage = body['message'] ?? 'An unknown server error occurred.';
+      throw AuthException(errorMessage);
     }
   }
 
   // --- Public API Methods ---
 
   /// Logs in a user and securely stores the received token.
-  Future<Map<String, dynamic>> login(String email, String password) async {
+  Future<void> login(String email, String password) async {
     final url = Uri.parse('$_baseUrl/auth/login');
     try {
       final response = await http.post(
         url,
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({"email": email, "password": password}),
-      ).timeout(const Duration(seconds: 15)); // Added timeout
+      ).timeout(const Duration(seconds: 15));
 
       final data = _handleResponse(response);
       final token = data['token'];
@@ -81,27 +79,35 @@ class AuthService {
       if (token != null) {
         await _storage.write(key: _tokenKey, value: token);
         _authStatusController.add(true); // Notify listeners: Logged In
-        return data;
       } else {
-        throw AuthException('Login successful, but no token was received.');
+        throw AuthException('Login failed: No token received from server.');
       }
     } on TimeoutException {
-      throw AuthException('The request timed out. Please try again.');
+      throw AuthException('The request timed out. Please check your connection.');
+    } on AuthException {
+      rethrow; // Re-throw our custom exceptions to be caught by the UI.
+    } catch (e) {
+      throw AuthException('An error occurred. Please try again.');
     }
   }
 
   /// Signs up a new user.
-  Future<Map<String, dynamic>> signup(String name, String email, String password) async {
+  Future<void> signup(String name, String email, String password) async {
     final url = Uri.parse('$_baseUrl/auth/signup');
     try {
-       final response = await http.post(
+      final response = await http.post(
         url,
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({"username": name, "email": email, "password": password}),
-      ).timeout(const Duration(seconds: 15)); // Added timeout
-      return _handleResponse(response);
+      ).timeout(const Duration(seconds: 15));
+
+      _handleResponse(response); // We just need to check if it was successful.
     } on TimeoutException {
-       throw AuthException('The request timed out. Please try again.');
+      throw AuthException('The request timed out. Please check your connection.');
+    } on AuthException {
+      rethrow;
+    } catch (e) {
+      throw AuthException('An error occurred. Please try again.');
     }
   }
 
@@ -111,22 +117,22 @@ class AuthService {
     _authStatusController.add(false); // Notify listeners: Logged Out
   }
 
-  /// Retrieves the stored token. Returns null if no token is found.
+  /// Retrieves the stored token.
   Future<String?> getToken() async {
     return await _storage.read(key: _tokenKey);
   }
 
-  /// Checks if the user is currently logged in (i.e., has a token).
+  /// Checks if the user is currently logged in.
   Future<bool> isLoggedIn() async {
     final token = await getToken();
     return token != null;
   }
 
-  /// Returns the headers needed for authenticated API calls.
+  /// **ADDED BACK**: Returns the headers needed for authenticated API calls.
   Future<Map<String, String>> getAuthHeaders() async {
     final token = await getToken();
     if (token == null) {
-      throw AuthException('Not authenticated. Please log in.');
+      throw AuthException('You are not logged in. Please log in again.');
     }
     return {
       "Content-Type": "application/json",
@@ -134,8 +140,9 @@ class AuthService {
     };
   }
 
-  /// Closes the stream controller when the app is disposed.
+  /// Closes the stream controller when the service is no longer needed.
   void dispose() {
     _authStatusController.close();
   }
 }
+

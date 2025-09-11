@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:quiz_app/client/pages/credits.dart';
 import 'dart:math' as math; // For the logo
 import 'package:quiz_app/first_page.dart'; // Import your home page file
 
@@ -31,7 +32,7 @@ class ThankYouPage extends StatelessWidget {
               // CORRECTED NAVIGATION:
               // This pushes the QuizFirstPage and removes all previous screens.
               Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (context) => const QuizFirstPage()),
+                MaterialPageRoute(builder: (context) => const CreditsPage()),
                 (Route<dynamic> route) => false,
               );
             },
@@ -43,7 +44,7 @@ class ThankYouPage extends StatelessWidget {
               elevation: 5,
             ),
             child: const Text(
-              'Back to Home',
+              'About the Developers',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
           ),
