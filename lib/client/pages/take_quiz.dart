@@ -27,10 +27,11 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
   late LiveQuestion _currentQuestion;
   List<LobbyPlayer> _leaderboard = [];
 
-  /// Tracks submitted answers: {questionIndex: answerIndex}
+  // --- STATE VARIABLES ---
   final Map<int, int> _submittedAnswers = {};
-  /// Tracks the currently selected option for the current question before submission.
   int? _tempSelectedAnswerIndex;
+  // ✨ ADDED: Stores the correct answer's index after the server reveals it.
+  int? _revealedCorrectAnswerIndex;
 
   StreamSubscription? _questionSubscription;
   StreamSubscription? _leaderboardSubscription;
@@ -56,16 +57,16 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
       if (mounted) {
         setState(() {
           _currentQuestion = question;
-          _tempSelectedAnswerIndex = null; // Reset selection for new question
+          _tempSelectedAnswerIndex = null;
+          // ✨ ADDED: Reset the revealed answer for the new question.
+          _revealedCorrectAnswerIndex = null;
         });
       }
     });
 
     _leaderboardSubscription = _socketService.leaderboardUpdates.listen((leaderboard) {
       if (mounted) {
-        setState(() {
-          _leaderboard = leaderboard;
-        });
+        setState(() => _leaderboard = leaderboard);
       }
     });
 
@@ -87,7 +88,6 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
     });
   }
 
-  /// Sets the temporary selected answer index when a user taps an option.
   void _selectOption(int index) {
     if (_submittedAnswers.containsKey(_currentQuestion.index)) return;
     setState(() {
@@ -95,31 +95,34 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
     });
   }
 
-  /// Submits the currently selected answer to the server.
+  /// ✨ MODIFIED: Now processes the server response to reveal the correct answer.
   Future<void> _submitAnswer() async {
     final questionIndex = _currentQuestion.index;
     final answerIndex = _tempSelectedAnswerIndex;
 
-    // Guard against submitting without a selection or re-submitting.
     if (answerIndex == null || _submittedAnswers.containsKey(questionIndex)) return;
 
-    // Lock the answer in the UI immediately for a responsive feel.
     setState(() {
       _submittedAnswers[questionIndex] = answerIndex;
     });
 
     try {
-      // Submit to the server in the background. No feedback is shown.
-      await _socketService.submitAnswer(
+      // Get the response from the server.
+      final response = await _socketService.submitAnswer(
         questionIndex: questionIndex,
         answerIndex: answerIndex,
       );
+
+      // Process the response to update the UI.
+      if (mounted) {
+        final int? correctAnswerFromServer = response['correctAnswerIndex'];
+        setState(() {
+          _revealedCorrectAnswerIndex = correctAnswerFromServer;
+        });
+      }
     } on SocketException catch (e) {
       if (mounted) {
-        // If submission fails, unlock the UI to allow the user to try again.
-        setState(() {
-          _submittedAnswers.remove(questionIndex);
-        });
+        setState(() => _submittedAnswers.remove(questionIndex));
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(e.message), backgroundColor: Colors.red),
         );
@@ -127,22 +130,15 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
     }
   }
 
-  // --- UI BUILD METHOD ---
   @override
   Widget build(BuildContext context) {
     final hasAnswered = _submittedAnswers.containsKey(_currentQuestion.index);
-    final optionColors = [
-      Colors.blue.shade700,
-      Colors.yellow.shade700,
-      Colors.green.shade600,
-      Colors.red.shade600,
-    ];
 
     return Scaffold(
       backgroundColor: Colors.grey[100],
       body: Stack(
         children: [
-          _buildBackground(), // The red curved background
+          _buildBackground(),
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(24.0),
@@ -159,28 +155,21 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
                       text: _currentQuestion.options[index],
                       index: index,
                       isSelected: _tempSelectedAnswerIndex == index,
-                      hasAnswered: hasAnswered,
-                      borderColor: optionColors[index % optionColors.length],
+                      hasSubmitted: hasAnswered,
+                      revealedCorrectIndex: _revealedCorrectAnswerIndex,
                     );
                   }),
                   const Spacer(),
-                  // Conditionally show Submit button or "Waiting..." text
                   if (!hasAnswered)
                     ElevatedButton(
-                      // Button is disabled until an option is selected
                       onPressed: _tempSelectedAnswerIndex != null ? _submitAnswer : null,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF1A73E9),
                         padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                         disabledBackgroundColor: Colors.grey.shade400,
                       ),
-                      child: const Text(
-                        'Submit',
-                        style: TextStyle(fontSize: 18, color: Colors.white),
-                      ),
+                      child: const Text('Submit', style: TextStyle(fontSize: 18, color: Colors.white)),
                     )
                   else
                     const Center(
@@ -197,42 +186,30 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
       ),
     );
   }
+  
+  // --- UI WIDGETS ---
 
-  /// Builds the red curved shape in the background.
   Widget _buildBackground() {
     return ClipPath(
       clipper: _BackgroundClipper(),
-      child: Container(
-        height: 200,
-        color: Colors.red.shade400,
-      ),
+      child: Container(height: 200, color: Colors.red.shade400),
     );
   }
 
-  /// Builds the question card with number, timer, and text.
   Widget _buildQuestionCard(String questionNumber, String questionText) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          )
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 5))],
       ),
       child: Column(
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                questionNumber,
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
+              Text(questionNumber, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             ],
           ),
           const SizedBox(height: 20),
@@ -246,41 +223,68 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
       ),
     );
   }
-
-  /// Builds an option tile with a colored border.
+  
+  /// ✨ MODIFIED: This widget now has advanced logic to color the options correctly.
   Widget _buildOptionTile({
     required String text,
     required int index,
     required bool isSelected,
-    required bool hasAnswered,
-    required Color borderColor,
+    required bool hasSubmitted,
+    int? revealedCorrectIndex,
   }) {
+    final optionColors = [
+      Colors.blue.shade700,
+      Colors.yellow.shade700,
+      Colors.green.shade600,
+      Colors.red.shade600,
+    ];
+
     Color getBackgroundColor() {
-      // Highlight the option if it's the currently selected one.
-      if (isSelected) return const Color.fromARGB(255, 133, 195, 245);
-      return Colors.white;
+      // After the correct answer is revealed...
+      if (revealedCorrectIndex != null) {
+        if (index == revealedCorrectIndex) {
+          return Colors.green.shade50; // Correct answer is light green
+        } else if (isSelected) {
+          return Colors.red.shade50; // User's wrong choice is light red
+        }
+      }
+      // Before submission, highlight the temporarily selected option.
+      if (isSelected && !hasSubmitted) return const Color.fromARGB(255, 211, 229, 245);
+      
+      return Colors.white; // Default
+    }
+
+    Color getBorderColor() {
+       if (revealedCorrectIndex != null) {
+        if (index == revealedCorrectIndex) {
+          return Colors.green.shade600; // Strong green for correct
+        } else if (isSelected) {
+          return Colors.red.shade600; // Strong red for incorrect
+        }
+        return Colors.grey.shade300; // Muted for other options
+      }
+      return optionColors[index % optionColors.length];
     }
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: InkWell(
-        // Allow tapping only if the answer has not been submitted for this question.
-        onTap: hasAnswered ? null : () => _selectOption(index),
+        onTap: hasSubmitted ? null : () => _selectOption(index),
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: getBackgroundColor(),
-            border: Border.all(color: borderColor, width: 2),
+            border: Border.all(color: getBorderColor(), width: 2.5),
             borderRadius: BorderRadius.circular(20),
           ),
           child: Row(
             children: [
               Text(
                 '${String.fromCharCode(65 + index)}. ',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: borderColor),
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: getBorderColor()),
               ),
               Expanded(
-                child: Text(text, style: const TextStyle(fontSize: 18,color: Colors.black)),
+                child: Text(text, style: const TextStyle(fontSize: 18, color: Colors.black)),
               ),
             ],
           ),
@@ -290,23 +294,16 @@ class _TakeQuizScreenState extends State<TakeQuizScreen> {
   }
 }
 
-/// A custom clipper to create the curved background shape.
 class _BackgroundClipper extends CustomClipper<Path> {
   @override
   Path getClip(Size size) {
     final path = Path();
     path.lineTo(0, size.height * 0.8);
-    path.quadraticBezierTo(
-      size.width / 2,
-      size.height,
-      size.width,
-      size.height * 0.8,
-    );
+    path.quadraticBezierTo(size.width / 2, size.height, size.width, size.height * 0.8);
     path.lineTo(size.width, 0);
     path.close();
     return path;
   }
-
   @override
   bool shouldReclip(CustomClipper<Path> oldClipper) => false;
 }

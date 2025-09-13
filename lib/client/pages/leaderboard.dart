@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:quiz_app/auth/live_models.dart';
 import 'package:quiz_app/auth/socket_service.dart';
 import 'package:quiz_app/client/pages/thankyou_page.dart';
-import 'package:quiz_app/first_page.dart';
+
 
 class FinalLeaderboardScreen extends StatelessWidget {
   final List<LobbyPlayer> finalLeaderboard;

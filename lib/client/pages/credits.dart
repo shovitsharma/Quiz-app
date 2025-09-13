@@ -24,7 +24,7 @@ class _CreditsPageState extends State<CreditsPage> {
   // Updated: The list no longer contains image URLs.
   final List<DeveloperInfo> _developers = [
     DeveloperInfo(name: 'Shovit Sharma', role: 'Flutter Developer'),
-    DeveloperInfo(name: 'Sarania Madhurjya', role: 'Flutter Developer'),
+    DeveloperInfo(name: 'Madhurjya B. Sarania', role: 'Flutter Developer'),
     DeveloperInfo(name: 'Anurag Sharma', role: 'Backend & API Developer'),
     DeveloperInfo(name: 'Vansh Bagra', role: 'Cloud Manager'),
     DeveloperInfo(name: 'Diksha', role: 'UI/UX Designer'),
